@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8
+- Page tabs: Heard (Packets / Nodes), Signal (Live / History), Area (Map / Sky), Radios (Interfaces / Network)
+- Nodes list with sort and filter chips; station details; signal tracker with pitch beeps
+- Packet inspector (clear-text header fields)
+- Quick panel (pull down): sounds, privacy, screen off, theme, brightness; saved to settings.ini
+- Watch list (`!` in names.txt) with "In range!" notes
+- GPS sky view (GSV), network view (relays and their stations), 24 h / 7 day history saved to SD
+- Announce button (asks the ColorUI host plugin to announce; plugin handles KISS 0xA1)
+- Firmware update over Wi-Fi from the web page (two 6 MB app slots; self-registered hash)
+- Touch default matches the R8 + Expansion Kit V2 as measured; taps use the release point
+
 ## 0.7
 - Modern UI: Inter fonts, Tabler icons, rounded cards, status bar, tap-to-jump icon rail,
   new Home page; themes night / soft / amber / retro (0.6 look kept)

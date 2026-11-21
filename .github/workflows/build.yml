@@ -43,6 +43,7 @@ jobs:
           mkdir -p dist
           cp $B/firmware.bin dist/firmware.bin
           cp $B/partitions.bin dist/partitions.bin
+          cp $A dist/boot_app0.bin
           python -m esptool --chip esp32s3 merge_bin -o dist/rnode-r8-colorui-FULL.bin \
             --flash_mode keep --flash_freq keep --flash_size 16MB \
             0x0 $B/bootloader.bin 0x8000 $B/partitions.bin 0xe000 $A 0x10000 $B/firmware.bin
@@ -63,5 +64,6 @@ jobs:
           body: |
             Flashable files for the Heltec V4-R8 + Expansion Kit V2.
             First install: `write-flash 0x0 rnode-r8-colorui-FULL.bin`, then provision.
-            Upgrade (keeps provisioning): `write-flash 0x8000 partitions.bin 0x10000 firmware.bin`, then register FIRMWARE_HASH.txt.
+            Upgrade from 0.8+: open the board's web page > Update and pick firmware.bin.
+            Upgrade by USB (keeps provisioning): `write-flash 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin`, then register FIRMWARE_HASH.txt.
             Full steps in the README. Never use `rnodeconf --autoinstall` on an R8.

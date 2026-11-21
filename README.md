@@ -10,10 +10,12 @@ strong they are, what kind of packets, the channel's noise, and where you are.
 
 ![Boot splash](docs/img/splash.png)
 
-> **Status: 0.7 (modern UI), running on real hardware.** Flashed on a Heltec V4-R8 +
-> Expansion Kit V2: new screens, SD settings/names, Wi-Fi file manager and touch rail
-> tested; linked up in MeshChatX over USB and Wi-Fi. Unofficial community build, not
+> **Status: 0.8.** 0.7 runs on real hardware (Heltec V4-R8 + Expansion Kit V2,
+> linked up in MeshChatX over USB and Wi-Fi). 0.8's new views are rendered by the same
+> code in the simulator and build cleanly for the R8. Unofficial community build, not
 > a release from the RNode project.
+
+![0.8 views](docs/img/ui-08.png)
 
 ![0.7 screens](docs/img/ui-07.png)
 
@@ -38,6 +40,22 @@ strong they are, what kind of packets, the channel's noise, and where you are.
   ([docs/SD_CARD.md](docs/SD_CARD.md), examples in `sd-card-example/`).
 - **Wi-Fi file manager**: open the board's IP in a browser to upload, download and
   delete SD files and edit settings without pulling the card.
+- **Firmware updates over Wi-Fi** (0.8): web page > Update > pick `firmware.bin`. The
+  board installs it into its spare slot, registers its own hash and restarts.
+- **Touch views** (0.8): tabs on Heard (Packets / Nodes), Signal (Live / History),
+  Area (Map / Sky) and Radios (Interfaces / Network).
+  - **Nodes**: every station, sorted by recent / signal / hops, filtered by app.
+  - Tap a station for **details** (full hash, first/last heard, relay, signal history),
+    then **Track signal**: a big gauge that beeps higher as the signal gets stronger,
+    for aiming antennas or finding a spot.
+  - Tap a packet for the **packet inspector** (flags, header type, relay ID, context).
+  - **Quick panel**: pull down from the top for sounds, privacy, screen off, theme and
+    a brightness slider (saved to settings.ini).
+  - **History**: packets per hour with the noise floor (24 h) and nodes per day (7 days),
+    kept on the SD card. **Sky**: GPS satellites on a sky dome. **Network**: relays and
+    the stations heard through them.
+  - **Watch list**: put `!` before a nickname in names.txt to get "In range!" when it shows up.
+  - **Announce** button on Status when the ColorUI host plugin is running.
 - **12 boot splashes**, one per boot in rotation. Six comics (UFO abduction, roof
   install, solar box, balloon, fishing...) and six that sneak in real RF physics:
   LoRa up/down chirps, Fresnel zone clearance, SF12 decoding at -20 dB SNR, +6 dB =
@@ -79,10 +97,12 @@ built by GitHub Actions from this repo.
 3. Flash:
    - **First install** (erases the RNode settings too):
      `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x0 rnode-r8-colorui-FULL.bin`
-   - **Upgrade** (keeps provisioning):
-     `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x8000 partitions.bin 0x10000 firmware.bin`
-     (0.7 uses a 6 MB app slot; `partitions.bin` moves to it without touching the
-     RNode's saved settings at 0x9000)
+   - **Upgrade from 0.8 or later**: no cable needed. Open the board's web page,
+     **Update** tab, pick `firmware.bin`.
+   - **Upgrade by USB** (keeps provisioning):
+     `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin`
+     (0.8 has two 6 MB app slots for Wi-Fi updates; the RNode's saved settings at
+     0x9000 are not touched)
 4. Press **RST**, then [provision / register the hash](#make-it-an-rnode).
 
 PORT is `COM5` etc. on Windows, `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem...` on a Mac.

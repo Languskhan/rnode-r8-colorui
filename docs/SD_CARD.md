@@ -9,7 +9,7 @@ card make a 31 GB FAT32 partition, see the README). Everything is optional.
 /names.txt             nicknames for nodes (sd-card-example/names.txt)
 /splash/*.bmp          your own boot pictures: 320x240, 24-bit or 16-bit BMP
 /tiles/<z>/<x>/<y>.jpg offline map (OSM "slippy" layout, .jpg or .png; same as WADAMESH)
-/logs/                 written by the RNode: heard-YYYY-MM-DD.csv
+/logs/                 written by the RNode: heard-YYYY-MM-DD.csv, stats.bin (History tab)
 ```
 
 The card is read when the board starts. After changing a file, press RST.
@@ -29,7 +29,9 @@ another node repeats your announce, and puts a QR code of the address on the
 Status page so friends can scan it into their app.
 
 ## names.txt
-`<hash> <nickname>` per line. Matches destination hashes and relay IDs by
+`<hash> <nickname>` per line. Put `!` before the nickname to add it to your **watch
+list**: `0056ee98  !KJ6 Mobile (Dad)` pops "In range!" (and chirps) when that node is
+heard after 30 minutes away. Matches destination hashes and relay IDs by
 prefix (8+ hex characters), so "via a1b2c3d4" becomes "via Hilltop Repeater".
 
 ## /splash
@@ -56,6 +58,8 @@ in any browser on the same network:
 
 - **Files**: browse the card, download logs, delete, make folders, upload files
   or a whole folder (a tile folder keeps its `<z>/<x>/<y>` layout).
+- **Update**: pick a `firmware.bin` to update the RNode over Wi-Fi (set a
+  `web_password` first if others use your network; `web_update = off` disables it).
 - **Settings** and **Nicknames**: edit `settings.ini` / `names.txt` in the browser;
   saving restarts the RNode so it reads them.
 

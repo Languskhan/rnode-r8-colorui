@@ -597,7 +597,7 @@ void pageStatus(Fb& fb, uint32_t now) {
   else snprintf(b, sizeof b, "Waiting for host via %s", how);
   Fb::fit(b, S.host ? CW - 150 : CW - 50, F_BOLD);
   fb.txt(X0 + 42, TOP + 6, b, T.text, F_BOLD);
-  if (S.host) button(fb, ANN_X, ANN_Y, "Announce", I_BCAST, T.accent);
+  if (S.host && S.have_host_stats) button(fb, ANN_X, ANN_Y, "Announce", I_BCAST, T.accent);
   if (S.web[0]) snprintf(b, sizeof b, "Files: %s", S.web);
   else if (S.ip[0]) snprintf(b, sizeof b, S.host ? "%s:7633" : "Wi-Fi %s  port 7633", S.ip);
   else snprintf(b, sizeof b, "%s", S.board);
@@ -1130,7 +1130,7 @@ bool onTap(int x, int y) {
       return true;
     }
   }
-  if (S.page == PG_STATUS && S.host && x >= ANN_X && y >= ANN_Y && y < ANN_Y + 28) {
+  if (S.page == PG_STATUS && S.host && S.have_host_stats && x >= ANN_X && y >= ANN_Y && y < ANN_Y + 28) {
     snprintf(S.host_out, sizeof S.host_out, "announce");
     notify(N_INFO, "Asked your computer to announce", S.now_ms);
     return true;
