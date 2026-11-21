@@ -65,6 +65,8 @@ enum Note : uint8_t {
   N_GPS_LOST,    // toast: GPS fix lost
   N_INTF,        // toast: interference detected on the channel
   N_BATT,        // toast: battery low
+  N_ECHO,        // toast: another node repeated YOUR announce (text = who)
+  N_AIRTIME,     // toast: TX airtime near the 10 %/hour budget
   N_COUNT
 };
 void notify(Note kind, const char* text, uint32_t now_ms);
@@ -74,12 +76,72 @@ void notify(Note kind, const char* text, uint32_t now_ms);
 void setMyDestinations(const uint8_t* hashes16, int n);
 void setNotifications(bool on);
 
+// How the host computer is connected to the RNode (shown in the status bar).
+enum Link : uint8_t { LINK_NONE = 0, LINK_USB, LINK_WIFI, LINK_BT };
+void setLink(uint8_t link, const char* ip);       // ip only for LINK_WIFI (may be null)
+// Theme: "night" (default), "soft", "amber", or "retro" (the 0.6 pixel look).
+void setThemeName(const char* name);
+void setClock12(bool on);
+// Touch: a tap at (x,y) in screen pixels. Taps on the left rail pick a page;
+// returns true if the tap was used.
+bool onTap(int x, int y);
+
+// ---- SD card files (read once at boot by the device; plain text) ----------
+// names.txt: one "<hash hex, 8-32 chars>  <nickname>" per line, # = comment.
+// Matches destination hashes AND relay (transport) IDs by prefix.
+int  loadNames(const char* text, size_t len);    // returns how many were loaded
+const char* nickname(const uint8_t* hash16);     // nullptr if none
+// settings.ini: "key = value" lines, see docs/SD_CARD.md.
+struct Settings {
+  char     brand[28]     = "";       // splash title ("" = firmware default)
+  char     theme[12]     = "night";
+  int      tz_min        = -480;     // minutes from UTC (also: tz = -8)
+  bool     clock12       = false;
+  bool     beep_area = true, beep_node = false, beep_msg = true, beep_echo = true;
+  bool     notes         = true;
+  int      idle_min      = 5;        // screensaver after this many minutes untouched (0 = never)
+  int      brightness    = 100;      // percent
+  int      dim           = 15;       // percent while the screensaver runs
+  int      start_page    = 0;
+  bool     privacy       = false;
+  bool     touch_flip    = false;    // flip tap Y if rail taps land on the wrong page
+  bool     log           = true;     // write /logs/*.csv on the SD card
+  bool     sd_live       = true;     // keep the SD mounted (map tiles, logs); off = read at boot only
+  uint8_t  my_dest[4][16];           // my_lxmf = hash[,hash...]
+  int      my_n          = 0;
+};
+void applySettings(const char* text, size_t len);   // parse + apply to the core
+const Settings& settings();
+
+// Coverage: every packet heard with a GPS fix becomes a sample (for the
+// Area page plot and the SD log).
+struct CovSample { int32_t lat, lon; int16_t rssi; int8_t snr; uint8_t hops; uint32_t unix; };
+int  coverageCount();
+const CovSample& coverage(int i);                // 0 = oldest
+
+// Screensaver: the device says when the screen has been idle; while idle the
+// core draws a dim clock. wantWake() is true while a card notification shows.
+void setIdle(bool idle);
+bool idle();
+bool wantWake();
+
+// Map under the Area page's coverage plot (device: offline tiles from SD).
+typedef bool (*MapPainter)(Fb& fb, int x, int y, int w, int h, int32_t lat_e6, int32_t lon_e6);
+void setMapPainter(MapPainter p);
+
 void tick(uint32_t now_ms);
 void render(Fb& fb, uint32_t now_ms);
 
 // Boot splash scenes (cui_splash.cpp): a different one each boot.
 int  splashCount();
 void drawSplash(Fb& fb, int scene, const char* version, int progress);
+void drawSplashStrip(Fb& fb, const char* caption, const char* version, int progress);
+void setBrand(const char* brand);                // settings.ini brand = ... ("" = default)
+
+// CSV lines for packets logged after *last_ms (updated). For /logs on the SD.
+// Columns: unix,local_time,dir,type,name,hash,hops,rssi,snr,lat,lon,area
+size_t heardCsv(uint32_t* last_ms, char* buf, size_t cap);
+const char* heardCsvHeader();
 
 // Host stats frame (CMD 0xA0) -- see docs/HOST_PROTOCOL.md
 enum HostMsg : uint8_t { HM_INTERFACES = 1, HM_GPS = 2, HM_TIME = 3, HM_EVENT = 4, HM_MYDEST = 5 };

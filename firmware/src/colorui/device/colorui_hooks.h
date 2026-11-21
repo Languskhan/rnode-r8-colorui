@@ -13,3 +13,4 @@ void colorui_on_host_seen();                                              // any
 void colorui_on_channel(int noise_floor, int current_rssi, bool interference);  // ~1 Hz
 void colorui_set_radio(uint32_t freq, uint32_t bw, uint8_t sf, uint8_t cr, int8_t txp);
 void colorui_set_battery(int percent);                                     // -1 = none / unknown
+void colorui_set_link(uint8_t link, const char* ip);                       // 0 none, 1 USB, 2 Wi-Fi, 3 BT

@@ -412,7 +412,7 @@ void prevPage() { setPage((S.page + PG_COUNT - 1) % PG_COUNT); }
 void setPage(int p) { if (p >= 0 && p < PG_COUNT) S.page = p; if (S.page == PG_LIST) S.msg_unread = 0; }
 void setLink(uint8_t link, const char* ip) {
   S.link = link;
-  snprintf(S.ip, sizeof S.ip, "%s", (link == LINK_WIFI && ip) ? ip : "");
+  snprintf(S.ip, sizeof S.ip, "%s", ip ? ip : "");
 }
 void setThemeName(const char* n) { S.retro = n && !strcmp(n, "retro"); setTheme(S.retro ? "night" : n); }
 void setClock12(bool on) { S.clock12 = on; }
@@ -570,6 +570,7 @@ void applySettings(const char* t, size_t len) {
     else if (!strcmp(k, "privacy")) s.privacy = truthy(v);
     else if (!strcmp(k, "touch_flip")) s.touch_flip = truthy(v);
     else if (!strcmp(k, "log")) s.log = truthy(v);
+    else if (!strcmp(k, "sd_live")) s.sd_live = truthy(v);
     else if (!strcmp(k, "my_lxmf") || !strcmp(k, "my_destinations")) {
       const char* q = v;
       while (*q && s.my_n < 4) {
@@ -612,4 +613,39 @@ void setIdle(bool on) { S.idle = on; }
 bool idle() { return S.idle; }
 bool wantWake() { return S.ncur.kind == N_AREA || S.ncur.kind == N_MSG; }
 
+}  // namespace cui
+
+namespace cui {
+const char* heardCsvHeader() { return "unix,local_time,dir,type,name,hash,hops,rssi,snr,lat,lon,area\n"; }
+
+size_t heardCsv(uint32_t* last_ms, char* buf, size_t cap) {
+  size_t n = 0;
+  uint32_t newest = *last_ms;
+  for (int i = S.log_count - 1; i >= 0; --i) {           // oldest first
+    const LogEntry& e = S.log[(S.log_head - 1 - i + kLogLen) % kLogLen];
+    if (e.t_ms <= *last_ms) continue;
+    char hx[33];
+    for (int k = 0; k < 16; ++k) snprintf(hx + 2 * k, 3, "%02x", e.dest[k]);
+    const char* nk = nickname(e.dest);
+    const char* nm = nk ? nk : (e.station >= 0 && S.st[e.station].name[0]) ? S.st[e.station].name : e.name;
+    char clean[40]; size_t c = 0;
+    for (const char* q = nm; *q && c + 1 < sizeof clean; ++q) clean[c++] = (*q == ',' || *q == '"' || *q == '\n') ? ' ' : *q;
+    clean[c] = 0;
+    const uint32_t u = S.unix_base ? S.unix_base + (int32_t)(e.t_ms - S.unix_base_ms) / 1000 : 0;
+    char lt[20] = "";
+    if (u) { const long t = (long)u + S.tz_min * 60L; snprintf(lt, sizeof lt, "%02ld:%02ld:%02ld", (t / 3600) % 24, (t / 60) % 60, t % 60); }
+    char pos[32] = ",";
+    if (S.gps_fix) snprintf(pos, sizeof pos, "%.6f,%.6f", S.lat / 1e6, S.lon / 1e6);
+    char line[200];
+    const int len = snprintf(line, sizeof line, "%lu,%s,%s,%s,%s,%s,%u,%d,%.2f,%s,%s\n",
+                             (unsigned long)u, lt, e.tx ? "tx" : "rx", kindLabel(e.kind), clean, hx, e.hops,
+                             e.tx ? 0 : e.rssi, e.tx ? 0.0 : e.snr, pos, S.area);
+    if (len <= 0 || n + (size_t)len >= cap) break;
+    memcpy(buf + n, line, (size_t)len); n += (size_t)len;
+    newest = e.t_ms;
+  }
+  buf[n] = 0;
+  *last_ms = newest;
+  return n;
+}
 }  // namespace cui

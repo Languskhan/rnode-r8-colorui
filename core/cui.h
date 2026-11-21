@@ -106,6 +106,7 @@ struct Settings {
   bool     privacy       = false;
   bool     touch_flip    = false;    // flip tap Y if rail taps land on the wrong page
   bool     log           = true;     // write /logs/*.csv on the SD card
+  bool     sd_live       = true;     // keep the SD mounted (map tiles, logs); off = read at boot only
   uint8_t  my_dest[4][16];           // my_lxmf = hash[,hash...]
   int      my_n          = 0;
 };
@@ -134,6 +135,13 @@ void render(Fb& fb, uint32_t now_ms);
 // Boot splash scenes (cui_splash.cpp): a different one each boot.
 int  splashCount();
 void drawSplash(Fb& fb, int scene, const char* version, int progress);
+void drawSplashStrip(Fb& fb, const char* caption, const char* version, int progress);
+void setBrand(const char* brand);                // settings.ini brand = ... ("" = default)
+
+// CSV lines for packets logged after *last_ms (updated). For /logs on the SD.
+// Columns: unix,local_time,dir,type,name,hash,hops,rssi,snr,lat,lon,area
+size_t heardCsv(uint32_t* last_ms, char* buf, size_t cap);
+const char* heardCsvHeader();
 
 // Host stats frame (CMD 0xA0) -- see docs/HOST_PROTOCOL.md
 enum HostMsg : uint8_t { HM_INTERFACES = 1, HM_GPS = 2, HM_TIME = 3, HM_EVENT = 4, HM_MYDEST = 5 };

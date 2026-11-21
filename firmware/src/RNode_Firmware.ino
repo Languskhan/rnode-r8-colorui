@@ -1752,6 +1752,18 @@ void loop() {
       if (millis() - colorui_slow_ms > 2000) {
         colorui_slow_ms = millis();
         colorui_set_radio(lora_freq, lora_bw, lora_sf, lora_cr, lora_txp);
+        {
+          uint8_t colorui_lk = 1; const char* colorui_ipp = nullptr;
+          #if HAS_WIFI
+            static char colorui_ip[16];
+            if (wifi_is_connected()) { snprintf(colorui_ip, sizeof colorui_ip, "%s", wr_device_ip.toString().c_str()); colorui_ipp = colorui_ip; }
+            if (wr_state == WR_STATE_CONNECTED) colorui_lk = 2;
+          #endif
+          #if HAS_BLUETOOTH || HAS_BLE == true
+            if (bt_state == BT_STATE_CONNECTED) colorui_lk = 3;
+          #endif
+          colorui_set_link(colorui_lk, colorui_ipp);
+        }
         #if HAS_PMU
           colorui_set_battery(battery_ready ? (int)battery_percent : -1);
         #endif

@@ -142,9 +142,24 @@ struct State {
   uint8_t  my_dest[kMyDests][16];
   int      my_n = 0;
   bool     batt_low = false;
+
+  // look and connection
+  bool     retro = false;            // theme=retro: the 0.6 pixel-art pages
+  bool     clock12 = false;
+  uint8_t  link = 0;                 // LINK_* : how the host reaches the RNode
+  char     ip[16] = {0};             // Wi-Fi address when link == LINK_WIFI
+  uint32_t msg_unread = 0;           // N_MSG count since the Heard page was last opened
+  bool     idle = false;
+  // your announce heard coming back through another node
+  uint32_t echo_count = 0, echo_ms = 0;
+  uint8_t  echo_hops = 0;
+  uint8_t  echo_via[16] = {0};
+  uint32_t last_air_check = 0;
 };
 
 extern State S;
+
+void renderRetro(Fb& fb, uint32_t now);   // cui_render_retro.cpp
 
 uint32_t unixNow();                  // 0 if no time yet
 float    airtimePct();
