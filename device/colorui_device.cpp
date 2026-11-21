@@ -167,7 +167,7 @@ void pollTouch(uint32_t now) {
   if (on) miss = 0;
   // Panel is portrait 240x320, the UI is landscape (rotation 1): x = raw y,
   // y = 239 - raw x. Measured on an R8 + Expansion Kit V2 with touch_debug:
-  // rail icons read (38,25) (41,127) (37,207) -- right on the rail. touch_flip
+  // rail icons read (19,22) (26,116) (20,219) -- right on the icons. touch_flip
   // = on turns it 180 degrees, for panels mounted the other way.
   int ux, uy;
   if (!cui::settings().touch_flip) { ux = y; uy = 239 - (int)x; }
