@@ -165,13 +165,13 @@ void pollTouch(uint32_t now) {
   const bool on = tp->chsc6x_read_touch_info(&x, &y) == 0;
   if (!on && down && miss < 2) { ++miss; return; }       // ignore one flaky read mid-gesture
   if (on) miss = 0;
-  // Panel is portrait 240x320, the UI is landscape. On the R8 + Expansion Kit V2
-  // the touch layer reads as a 270-degree turn (tested on hardware in 0.7: the
-  // 90-degree map put left-rail taps on the right edge). touch_flip = on in
-  // settings.ini turns it 180 degrees, for panels wired the other way.
+  // Panel is portrait 240x320, the UI is landscape (rotation 1): x = raw y,
+  // y = 239 - raw x. Measured on an R8 + Expansion Kit V2 with touch_debug:
+  // rail icons read (38,25) (41,127) (37,207) -- right on the rail. touch_flip
+  // = on turns it 180 degrees, for panels mounted the other way.
   int ux, uy;
-  if (cui::settings().touch_flip) { ux = y; uy = 239 - (int)x; }
-  else                            { ux = 319 - (int)y; uy = x; }
+  if (!cui::settings().touch_flip) { ux = y; uy = 239 - (int)x; }
+  else                             { ux = 319 - (int)y; uy = x; }
   if (on) { g_last_touch = now; cui::showTouch(ux, uy, now); }
   if (on && !down) { down = true; t0 = now; sx = lx = ux; sy = ly = uy; waking = cui::idle(); }
   else if (on) { lx = ux; ly = uy; }
@@ -183,7 +183,7 @@ void pollTouch(uint32_t now) {
     if (ax > 40 && ax >= ay) { if (dx > 0) cui::prevPage(); else cui::nextPage(); }   // swipe left/right
     else if (ay > 40) { if (dy < 0) cui::nextPage(); else cui::prevPage(); }          // swipe up/down
     else if (now - t0 > 1000) cui::togglePrivacy();
-    else if (!cui::onTap(sx, sy) && cui::retroTheme()) cui::nextPage();  // retro: any tap = next page
+    else if (!cui::onTap(lx, ly) && cui::retroTheme()) cui::nextPage();  // release point: the first sample can be noisy
   }
 }
 

@@ -420,7 +420,7 @@ void setClock12(bool on) { S.clock12 = on; }
 bool retroTheme() { return S.retro; }
 void showTouch(int x, int y, uint32_t now) { S.touch_x = (int16_t)x; S.touch_y = (int16_t)y; S.touch_ms = now ? now : 1; }
 bool onTap(int x, int y) {
-  if (S.retro || x >= 46) return false;            // the rail is 44 px wide
+  if (S.retro || x >= 60) return false;            // rail is 44 px; touch reads ~16 px right of it
   const int p = (y - 4) / 33;
   if (p < 0 || p >= PG_COUNT) return false;
   setPage(p);
