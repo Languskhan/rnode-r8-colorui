@@ -10,6 +10,7 @@
 - Clock screensaver with backlight dimming; airtime warning at 8 %
 - SD card: settings.ini, names.txt, /splash/*.bmp, /tiles map, /logs CSV; card stays
   mounted on the shared SPI3 bus (sd_live = off restores read-at-boot)
+- Wi-Fi file manager for the SD card (browser page on port 80, rnode-r8.local, optional password)
 - 6 MB app partition (16 MB layout); settings area unchanged
 
 ## 0.6 (first public source)

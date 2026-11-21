@@ -414,6 +414,7 @@ void setLink(uint8_t link, const char* ip) {
   S.link = link;
   snprintf(S.ip, sizeof S.ip, "%s", ip ? ip : "");
 }
+void setWebUrl(const char* u) { snprintf(S.web, sizeof S.web, "%s", u ? u : ""); }
 void setThemeName(const char* n) { S.retro = n && !strcmp(n, "retro"); setTheme(S.retro ? "night" : n); }
 void setClock12(bool on) { S.clock12 = on; }
 bool onTap(int x, int y) {
@@ -571,6 +572,8 @@ void applySettings(const char* t, size_t len) {
     else if (!strcmp(k, "touch_flip")) s.touch_flip = truthy(v);
     else if (!strcmp(k, "log")) s.log = truthy(v);
     else if (!strcmp(k, "sd_live")) s.sd_live = truthy(v);
+    else if (!strcmp(k, "web")) s.web = truthy(v);
+    else if (!strcmp(k, "web_password")) snprintf(s.web_password, sizeof s.web_password, "%s", v);
     else if (!strcmp(k, "my_lxmf") || !strcmp(k, "my_destinations")) {
       const char* q = v;
       while (*q && s.my_n < 4) {

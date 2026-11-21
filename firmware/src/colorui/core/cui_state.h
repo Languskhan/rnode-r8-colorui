@@ -148,6 +148,7 @@ struct State {
   bool     clock12 = false;
   uint8_t  link = 0;                 // LINK_* : how the host reaches the RNode
   char     ip[16] = {0};             // Wi-Fi address when link == LINK_WIFI
+  char     web[40] = {0};            // file manager URL
   uint32_t msg_unread = 0;           // N_MSG count since the Heard page was last opened
   bool     idle = false;
   // your announce heard coming back through another node

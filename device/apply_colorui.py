@@ -186,7 +186,7 @@ dst = os.path.join(root, "src", "colorui")
 shutil.rmtree(dst, ignore_errors=True)
 shutil.copytree(os.path.join(repo, "core"), os.path.join(dst, "core"))
 os.makedirs(os.path.join(dst, "device"))
-for f in ("colorui_hooks.h", "colorui_device.cpp", "colorui_demo.h"):
+for f in ("colorui_hooks.h", "colorui_device.cpp", "colorui_demo.h", "colorui_web.h", "colorui_web.cpp", "colorui_web_page.h"):
     shutil.copy(os.path.join(here, f), os.path.join(dst, "device", f))
 
 mk = os.path.join(root, "Makefile")

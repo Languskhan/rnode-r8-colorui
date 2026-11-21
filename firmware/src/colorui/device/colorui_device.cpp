@@ -19,6 +19,7 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include "colorui_hooks.h"
+#include "colorui_web.h"
 #include "../core/cui.h"
 #include "colorui_demo.h"
 #include <Preferences.h>
@@ -509,6 +510,7 @@ void uiTask(void*) {
     backlight(idle && !cui::wantWake() ? st.dim : st.brightness);
     static uint32_t last_log = 0;
     if (now - last_log > 30000) { last_log = now; flushLogs(); }
+    colorui_web_poll();                          // SD file manager on Wi-Fi (between frames)
     if (uint8_t b = cui::takeBeep()) playBeep(b);
     if (now - last_draw >= 100) {               // 10 fps
       last_draw = now;
@@ -527,6 +529,8 @@ void uiTask(void*) {
 }
 
 }  // namespace
+
+bool colorui_sd_live() { return sd_live; }
 
 void colorui_begin() {
   pinMode(CUI_SD_CS, OUTPUT); digitalWrite(CUI_SD_CS, HIGH);

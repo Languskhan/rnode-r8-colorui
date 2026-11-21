@@ -49,6 +49,20 @@ Every packet heard or sent, every 30 s, as CSV:
 Open it in a spreadsheet, or load lat/lon/rssi into a map tool to see your
 coverage. Turn off with `log = off`.
 
+## Over Wi-Fi (no card reader needed)
+When the RNode is on your Wi-Fi (`tools/pc/rnode_wifi.py`), open
+**http://<its IP>/** (shown on the Status page, also `http://rnode-r8.local/`)
+in any browser on the same network:
+
+- **Files**: browse the card, download logs, delete, make folders, upload files
+  or a whole folder (a tile folder keeps its `<z>/<x>/<y>` layout).
+- **Settings** and **Nicknames**: edit `settings.ini` / `names.txt` in the browser;
+  saving restarts the RNode so it reads them.
+
+Set `web_password = ...` in settings.ini to require a login (user `rnode`).
+It is plain HTTP on your own network: fine at home, don't expose port 80 to
+the internet. `web = off` turns it off. The screen pauses while files copy.
+
 ## If the screen glitches with a card inserted
 The card and the screen share one SPI bus. If you see garbled bands or
 freezes, set `sd_live = off`: the card is then read only at boot (cities,

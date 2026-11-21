@@ -78,7 +78,8 @@ void setNotifications(bool on);
 
 // How the host computer is connected to the RNode (shown in the status bar).
 enum Link : uint8_t { LINK_NONE = 0, LINK_USB, LINK_WIFI, LINK_BT };
-void setLink(uint8_t link, const char* ip);       // ip only for LINK_WIFI (may be null)
+void setLink(uint8_t link, const char* ip);       // ip: the board's Wi-Fi address if it has one (may be null)
+void setWebUrl(const char* url);                 // shown on the Status page once the file manager runs
 // Theme: "night" (default), "soft", "amber", or "retro" (the 0.6 pixel look).
 void setThemeName(const char* name);
 void setClock12(bool on);
@@ -107,6 +108,8 @@ struct Settings {
   bool     touch_flip    = false;    // flip tap Y if rail taps land on the wrong page
   bool     log           = true;     // write /logs/*.csv on the SD card
   bool     sd_live       = true;     // keep the SD mounted (map tiles, logs); off = read at boot only
+  bool     web           = true;     // SD file manager web page on Wi-Fi (port 80)
+  char     web_password[32] = "";    // "" = no password (user name: rnode)
   uint8_t  my_dest[4][16];           // my_lxmf = hash[,hash...]
   int      my_n          = 0;
 };

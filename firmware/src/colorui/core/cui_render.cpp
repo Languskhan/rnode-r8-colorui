@@ -589,7 +589,8 @@ void pageStatus(Fb& fb, uint32_t now) {
   const char* how = S.link == LINK_WIFI ? "Wi-Fi" : S.link == LINK_BT ? "Bluetooth" : "USB";
   snprintf(b, sizeof b, "%s via %s", S.host ? "Host connected" : "Waiting for host", how);
   fb.txt(X0 + 42, TOP + 6, b, T.text, F_BOLD);
-  if (S.link == LINK_WIFI && S.ip[0]) snprintf(b, sizeof b, "IP %s  port 7633", S.ip);
+  if (S.web[0]) snprintf(b, sizeof b, "Files: %s", S.web);
+  else if (S.ip[0]) snprintf(b, sizeof b, "Wi-Fi %s  port 7633", S.ip);
   else snprintf(b, sizeof b, "%s", S.board);
   Fb::fit(b, CW - 50, F_SM);
   fb.txt(X0 + 42, TOP + 22, b, T.sub, F_SM);

@@ -36,6 +36,8 @@ strong they are, what kind of packets, the channel's noise, and where you are.
   a message or new town wakes it.
 - **SD card**: settings, nicknames, your own splash pictures, offline map, logs
   ([docs/SD_CARD.md](docs/SD_CARD.md), examples in `sd-card-example/`).
+- **Wi-Fi file manager**: open the board's IP in a browser to upload, download and
+  delete SD files and edit settings without pulling the card.
 - **12 boot splashes**, one per boot in rotation. Six comics (UFO abduction, roof
   install, solar box, balloon, fishing...) and six that sneak in real RF physics:
   LoRa up/down chirps, Fresnel zone clearance, SF12 decoding at -20 dB SNR, +6 dB =
