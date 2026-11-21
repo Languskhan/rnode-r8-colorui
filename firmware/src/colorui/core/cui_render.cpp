@@ -13,6 +13,8 @@
 
 namespace cui {
 
+bool watched(const uint8_t* h);   // cui_core.cpp
+
 // Optional map painter (device: SD tiles). Returns false if it drew nothing.
 static MapPainter g_map = nullptr;
 void setMapPainter(MapPainter p) { g_map = p; }
@@ -22,12 +24,14 @@ namespace {
 constexpr int RAIL = 44;              // left icon rail width
 constexpr int X0 = 50, XR = 314;      // content area
 constexpr int CW = XR - X0;           // 264
-constexpr int TOP = 26;               // below the status bar
+constexpr int ANN_X = XR - 96, ANN_Y = 34;   // Status page "Announce" button
+int TOP = 26;                         // below the status bar (52 on pages with tabs)
 
 const char* kTitle[PG_COUNT] = {"Home", "Heard", "Signal", "Channel", "Area", "Radios", "Status"};
 const uint8_t kRailIcon[PG_COUNT] = {I_HOME, I_LIST, I_CHART, I_WAVE, I_MAP, I_NET, I_INFO};
 
 // ---- helpers ---------------------------------------------------------------
+int button(Fb& fb, int x, int y, const char* label, uint8_t ic, uint16_t c);
 uint16_t dimc(uint16_t c, int keep) {  // darken a color: keep 0..256
   int r = ((c >> 11) & 31) * keep >> 8, g = ((c >> 5) & 63) * keep >> 8, b = (c & 31) * keep >> 8;
   return (uint16_t)((r << 11) | (g << 5) | b);
@@ -275,7 +279,7 @@ void pageHome(Fb& fb, uint32_t now) {
 }
 
 // ---- Heard -----------------------------------------------------------------
-void pageHeard(Fb& fb, uint32_t now) {
+void heardPackets(Fb& fb, uint32_t now) {
   if (!S.log_count) {
     card(fb, X0, TOP + 4, CW, 60);
     fb.icon(X0 + 12, TOP + 25, I_RADAR, 18, T.accent);
@@ -283,9 +287,10 @@ void pageHeard(Fb& fb, uint32_t now) {
     fb.txt(X0 + 40, TOP + 34, "Packets you hear will show up here", T.muted, F_SM);
     return;
   }
-  const int rows = 6, rh = 34;
-  for (int i = 0; i < rows && i < S.log_count; ++i) {
-    const int j = (S.log_head - 1 - i + kLogLen) % kLogLen;
+  const int rh = 34, rows = (H - TOP - 4) / rh;
+  const int off = S.scroll[PG_LIST];
+  for (int i = 0; i < rows && i + off < S.log_count; ++i) {
+    const int j = (S.log_head - 1 - (i + off) + kLogLen) % kLogLen;
     const LogEntry& e = S.log[j];
     const int y = TOP + 2 + i * rh;
     if (i == 0) fb.fillRound(X0, y, CW, rh - 2, 8, T.card);
@@ -324,10 +329,10 @@ void pageHeard(Fb& fb, uint32_t now) {
 }
 
 // ---- Signal ----------------------------------------------------------------
-void pageSignal(Fb& fb, uint32_t now) {
+void signalLive(Fb& fb, uint32_t now) {
   (void)now;
   char b[32];
-  const int w = 130, h = 102, xa = X0, xb = X0 + w + 4, ya = TOP + 2, yb = TOP + 108;
+  const int w = 130, h = (H - TOP - 8) / 2, xa = X0, xb = X0 + w + 4, ya = TOP + 2, yb = TOP + 6 + h;
   // signal chart
   card(fb, xa, ya, w, h);
   cardHead(fb, xa, ya, I_CHART, T.green, "SIGNAL");
@@ -352,7 +357,7 @@ void pageSignal(Fb& fb, uint32_t now) {
   cardHead(fb, xb, ya, I_CLOCK, T.blue, "TX AIRTIME 1H");
   const float pct = airtimePct();
   const float frac = pct / 10.0f > 1 ? 1 : pct / 10.0f;
-  const int cx = xb + w / 2, cy = ya + 84;
+  const int cx = xb + w / 2, cy = ya + h - 18;
   fb.arc(cx, cy, 44, 8, 0, 180, T.stroke);
   if (frac > 0.01f) fb.arc(cx, cy, 44, 8, (int)(180 - frac * 180), 180, pct >= 8 ? T.orange : T.blue);
   snprintf(b, sizeof b, "%.1f%%", pct);
@@ -379,7 +384,7 @@ void pageSignal(Fb& fb, uint32_t now) {
   const struct { int idx; const char* l; uint16_t c; } rows[5] = {
     {0, "People", T.orange}, {2, "NomadNet", T.blue}, {1, "Propagation", T.violet}, {3, "Calls", T.green}, {7, "Other", T.sub}};
   for (int i = 0; i < 5; ++i) {
-    const int y = yb + 24 + i * 15;
+    const int y = yb + 22 + i * ((h - 26) / 5);
     const uint32_t v = S.svc_count[rows[i].idx];
     fb.txt(xb + 9, y, rows[i].l, T.sub, F_SM);
     progress(fb, xb + 72, y + 5, 34, (int)(256 * v / mxs), rows[i].c);
@@ -467,7 +472,7 @@ void coveragePlot(Fb& fb, int x, int y, int w, int h, bool over_map) {
   if (S.gps_fix) { fb.fillCircle(x + w / 2, y + h / 2, 5, rgb(0xFFFFFF)); fb.fillCircle(x + w / 2, y + h / 2, 3, T.blue); }
 }
 
-void pageArea(Fb& fb, uint32_t now) {
+void areaMap(Fb& fb, uint32_t now) {
   (void)now;
   char b[48];
   // place card
@@ -483,7 +488,7 @@ void pageArea(Fb& fb, uint32_t now) {
     fb.txt(X0 + 50, TOP + 34, b, T.sub, F_SM);
   } else fb.txt(X0 + 50, TOP + 34, "position stays on this device", T.muted, F_SM);
   // map / coverage card
-  const int my = TOP + 60, mh = 92;
+  const int my = TOP + 60, mh = H - 4 - my - 44;
   card(fb, X0, my, CW, mh);
   bool map = false;
   if (g_map && S.gps_fix && !S.privacy) map = g_map(fb, X0 + 2, my + 2, CW - 4, mh - 4, S.lat, S.lon);
@@ -498,7 +503,7 @@ void pageArea(Fb& fb, uint32_t now) {
   fb.icon(X0 + 8, ty + 6, I_ROUTE, 13, T.violet);
   fb.txt(X0 + 25, ty + 5, "THIS TRIP", T.sub, F_SM);
   fb.txtR(XR - 8, ty + 5, "NODES", T.muted, F_SM);
-  for (int i = 0; i < S.visit_n && i < 2; ++i) {
+  for (int i = 0; i < S.visit_n && i < (H - 4 - ty - 20) / 15; ++i) {
     const AreaVisit& v = S.visits[S.visit_n - 1 - i];
     const int y = ty + 20 + i * 15;
     char t[12] = "--:--";
@@ -525,7 +530,7 @@ const char* ifLabel(uint8_t k) {
     case IF_TCP: return "TCP/IP"; case IF_AUTO: return "LAN"; default: return "other"; }
 }
 
-void pageRadios(Fb& fb, uint32_t now) {
+void radiosIfaces(Fb& fb, uint32_t now) {
   (void)now;
   char b[48];
   if (!S.have_host_stats) {
@@ -539,7 +544,8 @@ void pageRadios(Fb& fb, uint32_t now) {
     return;
   }
   const int rh = 36;
-  for (int i = 0; i < S.if_n && i < 5; ++i) {
+  const int maxr = (H - TOP - 18) / (rh + 4);
+  for (int i = 0; i < S.if_n && i < maxr; ++i) {
     const Iface& f = S.ifs[i];
     const int y = TOP + 2 + i * (rh + 4);
     card(fb, X0, y, CW, rh);
@@ -559,7 +565,7 @@ void pageRadios(Fb& fb, uint32_t now) {
     fb.chip(XR - 8 - Fb::txtW(f.up ? "UP" : "DOWN", F_SM) - 10, y + 10, f.up ? "UP" : "DOWN",
             tint(f.up ? T.green : T.red), f.up ? T.green : T.red, F_SM);
   }
-  const int y = TOP + 2 + (S.if_n < 5 ? S.if_n : 5) * (rh + 4);
+  const int y = TOP + 2 + (S.if_n < maxr ? S.if_n : maxr) * (rh + 4);
   snprintf(b, sizeof b, "%u paths   %u known   %u queued", S.paths, S.dests, S.lxmf_q);
   if (y < H - 16) fb.txt(X0 + 4, y + 2, b, T.muted, F_SM);
 }
@@ -587,12 +593,15 @@ void pageStatus(Fb& fb, uint32_t now) {
   fb.fillRound(X0 + 6, TOP + 8, 28, 28, 8, tint(S.host ? T.green : T.orange));
   fb.icon(X0 + 11, TOP + 13, li, 18, S.host ? T.green : T.orange);
   const char* how = S.link == LINK_WIFI ? "Wi-Fi" : S.link == LINK_BT ? "Bluetooth" : "USB";
-  snprintf(b, sizeof b, "%s via %s", S.host ? "Host connected" : "Waiting for host", how);
+  if (S.host) snprintf(b, sizeof b, "Linked via %s", how);
+  else snprintf(b, sizeof b, "Waiting for host via %s", how);
+  Fb::fit(b, S.host ? CW - 150 : CW - 50, F_BOLD);
   fb.txt(X0 + 42, TOP + 6, b, T.text, F_BOLD);
+  if (S.host) button(fb, ANN_X, ANN_Y, "Announce", I_BCAST, T.accent);
   if (S.web[0]) snprintf(b, sizeof b, "Files: %s", S.web);
-  else if (S.ip[0]) snprintf(b, sizeof b, "Wi-Fi %s  port 7633", S.ip);
+  else if (S.ip[0]) snprintf(b, sizeof b, S.host ? "%s:7633" : "Wi-Fi %s  port 7633", S.ip);
   else snprintf(b, sizeof b, "%s", S.board);
-  Fb::fit(b, CW - 50, F_SM);
+  Fb::fit(b, S.host ? CW - 150 : CW - 50, F_SM);
   fb.txt(X0 + 42, TOP + 22, b, T.sub, F_SM);
   // left: details, right: QR of my address
   const bool qr = S.my_n > 0 && !S.privacy;
@@ -626,6 +635,510 @@ void pageStatus(Fb& fb, uint32_t now) {
     fb.txtC(qx + 50, y0 + 128, "scan to add me", T.accent, F_SM);
   }
 }
+
+// ============================================================================
+// 0.8: tabs, Nodes, History, Sky, Network, and the tap-opened views
+// ============================================================================
+constexpr int TAB_Y = 26, TAB_H = 22;
+
+// Segmented tabs at the top of a page. w = width used (scroll buttons may sit to the right).
+void tabs(Fb& fb, const char* const* labels, int n, int active, int w) {
+  fb.fillRound(X0, TAB_Y, w, TAB_H, 8, T.card);
+  const int sw = w / n;
+  for (int i = 0; i < n; ++i) {
+    const int x = X0 + i * sw;
+    if (i == active) fb.fillRound(x + 2, TAB_Y + 2, sw - 4, TAB_H - 4, 6, T.accent_bg);
+    fb.txtC(x + sw / 2, TAB_Y + 4, labels[i], i == active ? T.accent : T.sub, F_BOLD);
+  }
+}
+// up/down scroll buttons to the right of the tabs
+void scrollButtons(Fb& fb) {
+  for (int k = 0; k < 2; ++k) {
+    const int x = XR - 56 + k * 29;
+    fb.fillRound(x, TAB_Y, 27, TAB_H, 8, T.card);
+    const int cx = x + 13, cy = TAB_Y + 11, d = k ? 1 : -1;   // k=0 up, k=1 down
+    fb.lineAA(cx - 5, cy - 2 * d, cx, cy + 3 * d, T.sub);
+    fb.lineAA(cx, cy + 3 * d, cx + 5, cy - 2 * d, T.sub);
+  }
+}
+
+// stations shown on the Nodes tab, after sort + filter
+int nodeList(int* out, int cap) {
+  int n = 0;
+  for (int i = 0; i < kMaxStations && n < cap; ++i) {
+    if (!S.st[i].used) continue;
+    const int sv = S.st[i].service;
+    const int f = S.node_filter;
+    if (f == 1 && sv != 0) continue;
+    if (f == 2 && sv != 2) continue;
+    if (f == 3 && sv != 1) continue;
+    if (f == 4 && sv != 3) continue;
+    out[n++] = i;
+  }
+  for (int a = 1; a < n; ++a)                      // insertion sort, n <= 64
+    for (int b = a; b > 0; --b) {
+      const Station &x = S.st[out[b - 1]], &y = S.st[out[b]];
+      bool swap = false;
+      if (S.node_sort == 0) swap = y.last_ms > x.last_ms;
+      else if (S.node_sort == 1) swap = y.rssi > x.rssi;
+      else swap = y.hops < x.hops || (y.hops == x.hops && y.last_ms > x.last_ms);
+      if (!swap) break;
+      const int t = out[b]; out[b] = out[b - 1]; out[b - 1] = t;
+    }
+  return n;
+}
+
+const char* kSortName[3] = {"Recent", "Signal", "Hops"};
+const char* kFilterName[5] = {"All", "People", "NomadNet", "Propagation", "Calls"};
+constexpr int NODE_ROW_Y = 72, NODE_RH = 33;
+
+uint8_t svcIcon(int sv) { return sv == 0 ? I_USERS : sv == 1 ? I_ROUTER : sv == 2 ? I_NET : sv == 3 ? I_MSG : I_BCAST; }
+uint16_t svcCol(int sv) { return sv == 0 ? T.orange : sv == 1 ? T.violet : sv == 2 ? T.blue : sv == 3 ? T.green : T.sub; }
+
+void heardNodes(Fb& fb, uint32_t now) {
+  char b[48];
+  int x = X0;
+  for (int i = 0; i < 3; ++i) {
+    const bool on = i == S.node_sort;
+    x = fb.chip(x, 51, kSortName[i], on ? T.accent_bg : T.card, on ? T.accent : T.sub, F_SM) + 4;
+  }
+  snprintf(b, sizeof b, "%s  v", kFilterName[S.node_filter]);
+  fb.chip(XR - Fb::txtW(b, F_SM) - 10, 51, b, S.node_filter ? T.accent_bg : T.card, S.node_filter ? T.accent : T.sub, F_SM);
+  int idx[kMaxStations];
+  const int n = nodeList(idx, kMaxStations);
+  if (!n) { fb.txt(X0 + 6, NODE_ROW_Y + 8, "No stations yet", T.muted, F_BODY); return; }
+  const int rows = (H - NODE_ROW_Y - 2) / NODE_RH, off = S.scroll[PG_LIST] < n ? S.scroll[PG_LIST] : 0;
+  for (int r = 0; r < rows && r + off < n; ++r) {
+    const Station& st = S.st[idx[r + off]];
+    const int y = NODE_ROW_Y + r * NODE_RH;
+    if (r) fb.hline(X0 + 36, y, CW - 42, T.stroke);
+    const uint16_t c = svcCol(st.service);
+    fb.fillRound(X0 + 5, y + 4, 24, 24, 7, tint(c));
+    fb.icon(X0 + 10, y + 9, svcIcon(st.service), 13, c);
+    nameOf(st.dest, idx[r + off], b, sizeof b);
+    if (watched(st.dest)) { char t[52]; snprintf(t, sizeof t, "* %s", b); snprintf(b, sizeof b, "%s", t); }
+    Fb::fit(b, 150, F_BOLD);
+    fb.txt(X0 + 36, y + 3, b, named(st.dest, idx[r + off]) ? T.text : T.sub, F_BOLD);
+    char via[24] = "";
+    if (st.has_via && !S.privacy) { const char* nk = nickname(st.via); char h[16]; hexShort(st.via, h); snprintf(via, sizeof via, "  via %s", nk ? nk : h); }
+    snprintf(b, sizeof b, "%s  %u hop%s  %lux%s", st.service >= 0 ? kServices[st.service].label : "node", st.hops, st.hops == 1 ? "" : "s", (unsigned long)st.count, via);
+    Fb::fit(b, 170, F_SM);
+    fb.txt(X0 + 36, y + 18, b, T.muted, F_SM);
+    snprintf(b, sizeof b, "%d", st.rssi);
+    fb.txtR(XR - 6, y + 3, b, st.rssi > -90 ? T.green : (st.rssi > -110 ? T.text : T.orange), F_BOLD);
+    char ago[8]; fmtAgo(now - st.last_ms, ago, sizeof ago);
+    fb.txtR(XR - 6, y + 18, ago, T.muted, F_SM);
+  }
+}
+
+void signalHistory(Fb& fb, uint32_t now) {
+  (void)now;
+  char b[40];
+  const uint32_t u = unixNow();
+  const int y1 = TOP + 2, h1 = 104, y2 = y1 + h1 + 4, h2 = H - 4 - y2;
+  card(fb, X0, y1, CW, h1);
+  cardHead(fb, X0, y1, I_CHART, T.accent, "LAST 24 HOURS");
+  { const int wn = Fb::txtW("noise", F_SM), wp = Fb::txtW("packets", F_SM);
+    fb.txtR(XR - 8, y1 + 6, "noise", T.muted, F_SM); fb.fillRound(XR - 8 - wn - 10, y1 + 10, 6, 6, 2, T.orange);
+    fb.txtR(XR - 8 - wn - 18, y1 + 6, "packets", T.muted, F_SM); fb.fillRound(XR - 8 - wn - 28 - wp, y1 + 10, 6, 6, 2, T.accent); }
+  if (!u) { fb.txtC(X0 + CW / 2, y1 + 50, "needs GPS time", T.muted, F_SM); }
+  else {
+    uint16_t mx = 4;
+    for (int i = 0; i < 24; ++i) { const HourBin& hb = S.hours[i]; if (hb.hour + 24 > u / 3600 && hb.pkts > mx) mx = hb.pkts; }
+    const int gx = X0 + 10, gw = CW - 20, gy = y1 + 26, gh = h1 - 44, bw = gw / 24;
+    float lx = -1, ly = 0;
+    for (int k = 0; k < 24; ++k) {                     // oldest hour on the left
+      const uint32_t hr = u / 3600 - 23 + k;
+      const HourBin& hb = S.hours[hr % 24];
+      const bool ok = hb.hour == hr;
+      const int bh = ok ? hb.pkts * gh / mx : 0;
+      const int x = gx + k * bw;
+      fb.fillRound(x, gy + gh - (bh > 2 ? bh : 2), bw - 2, bh > 2 ? bh : 2, 1, ok && hb.pkts ? T.accent : T.stroke);
+      if (ok && hb.noise_n) {
+        const float nf = (float)hb.noise_sum / hb.noise_n;           // -125..-85 dBm
+        float v = (nf + 125) / 40.0f; v = v < 0 ? 0 : v > 1 ? 1 : v;
+        const float yy = gy + gh - v * gh, xx = x + bw / 2.0f;
+        if (lx >= 0) fb.lineAA(lx, ly, xx, yy, T.orange);
+        lx = xx; ly = yy;
+      }
+    }
+    const long lt = (long)u + S.tz_min * 60L;
+    for (int k = 0; k < 24; k += 6) {
+      const int hh = (int)(((lt / 3600) - 23 + k) % 24 + 24) % 24;
+      snprintf(b, sizeof b, "%d%s", S.clock12 ? (hh % 12 ? hh % 12 : 12) : hh, S.clock12 ? (hh < 12 ? "a" : "p") : "h");
+      fb.txt(gx + k * bw, gy + gh + 3, b, T.muted, F_SM);
+    }
+    fb.txtR(gx + gw, gy + gh + 3, "now", T.muted, F_SM);
+  }
+  card(fb, X0, y2, CW, h2);
+  cardHead(fb, X0, y2, I_USERS, T.violet, "LAST 7 DAYS");
+  fb.txtR(XR - 8, y2 + 6, "nodes per day", T.muted, F_SM);
+  if (u) {
+    uint16_t mx = 2;
+    for (int i = 0; i < 7; ++i) if (S.days[i].day + 7 > u / 86400 && S.days[i].nodes > mx) mx = S.days[i].nodes;
+    static const char* wd[] = {"Th", "Fr", "Sa", "Su", "Mo", "Tu", "We"};
+    const int gx = X0 + 10, bw = (CW - 20) / 7, gy = y2 + 36, gh = h2 - 56;
+    for (int k = 0; k < 7; ++k) {
+      const uint32_t d = u / 86400 - 6 + k;
+      const DayBin& db = S.days[d % 7];
+      const bool ok = db.day == d;
+      const int bh = ok ? db.nodes * gh / mx : 0;
+      const int x = gx + k * bw;
+      fb.fillRound(x + 3, gy + gh - (bh > 2 ? bh : 2), bw - 8, bh > 2 ? bh : 2, 3, ok && db.nodes ? T.violet : T.stroke);
+      if (ok && db.nodes) { snprintf(b, sizeof b, "%u", db.nodes); fb.txtC(x + bw / 2 - 1, gy + gh - bh - 13, b, T.text, F_SM); }
+      fb.txtC(x + bw / 2 - 1, gy + gh + 3, wd[((long)d % 7 + 7) % 7], k == 6 ? T.accent : T.muted, F_SM);
+    }
+  }
+}
+
+void areaSky(Fb& fb, uint32_t now) {
+  (void)now;
+  char b[40];
+  const int cx = X0 + 90, cy = TOP + 92, r = 84;
+  card(fb, X0, TOP + 2, CW, H - TOP - 6);
+  // sky dome: horizon, 30 and 60 degree rings, N/E/S/W
+  for (int k = 1; k <= 3; ++k) fb.arc(cx, cy, r * k / 3, 1, 0, 360, T.stroke);
+  fb.hline(cx - r, cy, 2 * r, T.stroke); fb.vline(cx, cy - r, 2 * r, T.stroke);
+  fb.txtC(cx, cy - r - 1, "N", T.sub, F_SM); fb.txtC(cx, cy + r - 12, "S", T.muted, F_SM);
+  fb.txt(cx + r - 9, cy - 13, "E", T.muted, F_SM); fb.txt(cx - r + 2, cy - 13, "W", T.muted, F_SM);
+  int best[kSats]; int nb = 0;
+  for (int i = 0; i < S.sats_n; ++i) {
+    const SatInfo& s = S.sats_v[i];
+    if (s.elev < 0) continue;
+    const float rr = r * (90 - s.elev) / 90.0f, a = s.az * 3.14159f / 180.0f;
+    const int px = cx + (int)(rr * sinf(a)), py = cy - (int)(rr * cosf(a));
+    const uint16_t c = s.snr >= 35 ? T.green : s.snr >= 25 ? T.yellow : s.snr > 0 ? T.orange : T.muted;
+    fb.fillCircle(px, py, 5, c);
+    snprintf(b, sizeof b, "%u", s.prn);
+    fb.txt(px + 6, py - 6, b, T.sub, F_SM);
+    best[nb++] = i;
+  }
+  for (int a = 1; a < nb; ++a) for (int k = a; k > 0 && S.sats_v[best[k]].snr > S.sats_v[best[k - 1]].snr; --k) { int t = best[k]; best[k] = best[k - 1]; best[k - 1] = t; }
+  const int lx = X0 + 186;
+  fb.txt(lx, TOP + 8, "SATELLITES", T.sub, F_SM);
+  snprintf(b, sizeof b, "%d", S.sats_n); fb.txt(lx, TOP + 22, b, T.text, F_BIG);
+  snprintf(b, sizeof b, "in view, %d used", S.sats_used); fb.txt(lx, TOP + 48, b, T.muted, F_SM);
+  if (S.hdop > 0) { snprintf(b, sizeof b, "HDOP %.1f", S.hdop); fb.txt(lx, TOP + 62, b, S.hdop < 2 ? T.green : T.sub, F_SM); }
+  for (int k = 0; k < nb && k < 6; ++k) {
+    const SatInfo& s = S.sats_v[best[k]];
+    const int y = TOP + 82 + k * 16;
+    snprintf(b, sizeof b, "%c%u", s.sys, s.prn); fb.txt(lx, y, b, T.sub, F_SM);
+    progress(fb, lx + 34, y + 5, 30, s.snr > 50 ? 256 : s.snr * 256 / 50, s.snr >= 35 ? T.green : s.snr >= 25 ? T.yellow : T.orange);
+    snprintf(b, sizeof b, "%d", s.snr); fb.txtR(XR - 8, y, b, T.text, F_SM);
+  }
+  if (!S.sats_n) fb.txt(lx, TOP + 82, "waiting for GPS", T.muted, F_SM);
+}
+
+void radiosNetwork(Fb& fb, uint32_t now) {
+  (void)now;
+  char b[24];
+  card(fb, X0, TOP + 2, CW, H - TOP - 6);
+  const int cx = X0 + CW / 2, cy = TOP + 86;
+  uint8_t relays[8][16]; int nr = 0;
+  int rcount[8] = {0};
+  int direct = 0, via_n = 0;
+  for (int i = 0; i < kMaxStations; ++i) {
+    const Station& s = S.st[i];
+    if (!s.used) continue;
+    if (!s.has_via) { direct++; continue; }
+    via_n++;
+    int k = 0;
+    for (; k < nr; ++k) if (!memcmp(relays[k], s.via, 16)) break;
+    if (k == nr && nr < 8) memcpy(relays[nr++], s.via, 16);
+    if (k < 8) rcount[k]++;
+  }
+  // direct stations on an inner ring, relays on the middle ring, their stations outside
+  int di = 0;
+  for (int i = 0; i < kMaxStations; ++i) {
+    const Station& s = S.st[i];
+    if (!s.used || s.has_via) continue;
+    const float a = di++ * 6.2832f / (direct ? direct : 1);
+    const int px = cx + (int)(34 * cosf(a)), py = cy + (int)(30 * sinf(a));
+    fb.lineAA(cx, cy, px, py, T.stroke);
+    fb.fillCircle(px, py, 3, svcCol(s.service));
+  }
+  for (int k = 0; k < nr; ++k) {
+    const float a = k * 6.2832f / nr - 1.5708f;
+    const int rx = cx + (int)(82 * cosf(a)), ry = cy - 8 + (int)(46 * sinf(a));
+    fb.lineAA(cx, cy, rx, ry, dimc(T.violet, 160));
+    int si = 0;
+    for (int i = 0; i < kMaxStations; ++i) {
+      const Station& s = S.st[i];
+      if (!s.used || !s.has_via || memcmp(s.via, relays[k], 16)) continue;
+      const float sa = a + (si++ - (rcount[k] - 1) / 2.0f) * 0.22f;
+      const int px = rx + (int)(26 * cosf(sa)), py = ry + (int)(22 * sinf(sa));
+      fb.lineAA(rx, ry, px, py, T.stroke);
+      fb.fillCircle(px, py, 3, svcCol(s.service));
+    }
+    fb.fillCircle(rx, ry, 7, T.violet);
+    fb.icon(rx - 6, ry - 6, I_ROUTER, 13, T.bg);
+    const char* nk = nickname(relays[k]);
+    if (nk && !S.privacy) snprintf(b, sizeof b, "%s", nk);
+    else snprintf(b, sizeof b, "%02x%02x", relays[k][0], relays[k][1]);
+    Fb::fit(b, 70, F_SM);
+    fb.txtC(rx, ry + 8, b, T.sub, F_SM);
+  }
+  fb.fillCircle(cx, cy, 9, T.accent);
+  fb.icon(cx - 6, cy - 6, I_ANT, 13, T.bg);
+  snprintf(b, sizeof b, "%d relay%s", nr, nr == 1 ? "" : "s");
+  fb.txt(X0 + 8, H - 22, b, T.violet, F_SM);
+  snprintf(b, sizeof b, "%d direct", direct);
+  fb.txtC(X0 + CW / 2, H - 22, b, T.text, F_SM);
+  snprintf(b, sizeof b, "%d via relays", via_n);
+  fb.txtR(XR - 8, H - 22, b, T.sub, F_SM);
+}
+
+// ---- tap-opened views --------------------------------------------------------
+constexpr int OV_X = X0 - 2, OV_Y = 26, OV_W = CW + 4, OV_H = H - 30;
+
+void closeButton(Fb& fb, int x, int y) {
+  fb.fillCircle(x, y, 11, T.card2);
+  fb.lineAA(x - 4, y - 4, x + 4, y + 4, T.text); fb.lineAA(x + 4, y - 4, x - 4, y + 4, T.text);
+}
+int button(Fb& fb, int x, int y, const char* label, uint8_t ic, uint16_t c) {
+  const int w = Fb::txtW(label, F_BOLD) + (ic < I_COUNT ? 34 : 18);
+  fb.fillRound(x, y, w, 28, 9, tint(c));
+  int tx = x + 9;
+  if (ic < I_COUNT) { fb.icon(tx, y + 7, ic, 13, c); tx += 18; }
+  fb.txt(tx, y + 6, label, c, F_BOLD);
+  return x + w;
+}
+
+void viewStation(Fb& fb, uint32_t now) {
+  if (S.ov_idx < 0 || !S.st[S.ov_idx].used) { S.ov = OV_NONE; return; }
+  const Station& st = S.st[S.ov_idx];
+  char b[64];
+  fb.fillRound(OV_X, OV_Y, OV_W, OV_H, 12, T.card);
+  const uint16_t c = svcCol(st.service);
+  fb.fillRound(OV_X + 8, OV_Y + 8, 34, 34, 9, tint(c));
+  fb.icon(OV_X + 16, OV_Y + 16, svcIcon(st.service), 18, c);
+  nameOf(st.dest, S.ov_idx, b, sizeof b); Fb::fit(b, OV_W - 90, F_TITLE);
+  fb.txt(OV_X + 50, OV_Y + 7, b, T.text, F_TITLE);
+  snprintf(b, sizeof b, "%s%s", st.service >= 0 ? kServices[st.service].aspect : "unknown app", watched(st.dest) ? "   * watched" : "");
+  Fb::fit(b, OV_W - 90, F_SM);
+  fb.txt(OV_X + 50, OV_Y + 27, b, T.sub, F_SM);
+  closeButton(fb, OV_X + OV_W - 18, OV_Y + 18);
+  // full hash
+  char hx[33];
+  for (int i = 0; i < 16; ++i) snprintf(hx + 2 * i, 3, "%02x", st.dest[i]);
+  fb.txt(OV_X + 10, OV_Y + 48, S.privacy ? "* * * *" : hx, T.muted, F_SM);
+  // facts grid
+  char ago[8], first[8];
+  fmtAgo(now - st.last_ms, ago, sizeof ago); fmtAgo(now - st.first_ms, first, sizeof first);
+  struct { const char* k; char v[28]; } f[6];
+  f[0].k = "LAST HEARD"; snprintf(f[0].v, 28, "%s ago", ago);
+  f[1].k = "FIRST HEARD"; snprintf(f[1].v, 28, "%s ago", first);
+  f[2].k = "PACKETS"; snprintf(f[2].v, 28, "%lu", (unsigned long)st.count);
+  f[3].k = "SIGNAL"; snprintf(f[3].v, 28, "%d / %.1f", st.rssi, st.snr);
+  f[4].k = "HOPS"; snprintf(f[4].v, 28, "%u", st.hops);
+  f[5].k = "VIA"; if (st.has_via && !S.privacy) { const char* nk = nickname(st.via); char h[16]; hexShort(st.via, h); snprintf(f[5].v, 28, "%s", nk ? nk : h); } else snprintf(f[5].v, 28, "direct");
+  for (int i = 0; i < 6; ++i) {
+    const int x = OV_X + 10 + (i % 3) * 88, y = OV_Y + 66 + (i / 3) * 34;
+    fb.txt(x, y, f[i].k, T.muted, F_SM);
+    Fb::fit(f[i].v, 84, F_BOLD);
+    fb.txt(x, y + 13, f[i].v, T.text, F_BOLD);
+  }
+  // RSSI sparkline of the last packets
+  const int gx = OV_X + 10, gy = OV_Y + 138, gw = OV_W - 20, gh = 26;
+  fb.fillRound(gx, gy, gw, gh, 6, T.card2);
+  for (int i = 0; i < st.hist_n; ++i) {
+    const int v = st.hist[(st.hist_head - st.hist_n + i + 16) % 16];
+    int bh = (v + 130) * (gh - 6) / 70; bh = bh < 2 ? 2 : bh > gh - 6 ? gh - 6 : bh;
+    fb.fillRound(gx + 6 + i * ((gw - 12) / 16), gy + gh - 3 - bh, (gw - 12) / 16 - 3, bh, 1, v > -90 ? T.green : v > -110 ? T.accent : T.orange);
+  }
+  button(fb, OV_X + 10, OV_Y + OV_H - 36, "Track signal", I_RADAR, T.accent);
+}
+
+void viewPacket(Fb& fb, uint32_t now) {
+  if (S.ov_idx < 0) { S.ov = OV_NONE; return; }
+  const LogEntry& e = S.log[S.ov_idx];
+  char b[64];
+  fb.fillRound(OV_X, OV_Y, OV_W, OV_H, 12, T.card);
+  const uint16_t kc = e.tx ? T.accent : kindCol(e.kind);
+  fb.fillRound(OV_X + 8, OV_Y + 8, 30, 30, 8, tint(kc));
+  fb.icon(OV_X + 14, OV_Y + 14, e.tx ? I_ANT : kindIcon(e.kind), 18, kc);
+  static const char* ptn[] = {"DATA", "ANNOUNCE", "LINKREQUEST", "PROOF"};
+  static const char* dtn[] = {"SINGLE", "GROUP", "PLAIN", "LINK"};
+  snprintf(b, sizeof b, "%s packet%s", kindLabel(e.kind), e.tx ? " (you sent)" : "");
+  fb.txt(OV_X + 46, OV_Y + 7, b, T.text, F_TITLE);
+  char ago[8]; fmtAgo(now - e.t_ms, ago, sizeof ago);
+  snprintf(b, sizeof b, "%s ago  -  %u bytes  -  %lu ms on air", ago, e.len, (unsigned long)airtimeMsForBytes(e.len));
+  fb.txt(OV_X + 46, OV_Y + 26, b, T.sub, F_SM);
+  closeButton(fb, OV_X + OV_W - 18, OV_Y + 18);
+  char hx[33], tid[33] = "-";
+  for (int i = 0; i < 16; ++i) snprintf(hx + 2 * i, 3, "%02x", e.dest[i]);
+  if (e.has_via) for (int i = 0; i < 16; ++i) snprintf(tid + 2 * i, 3, "%02x", e.via[i]);
+  struct { const char* k; char v[48]; } r[8];
+  r[0].k = "Flags"; snprintf(r[0].v, 48, "0x%02x  header %d%s%s", e.flags, (e.flags >> 6) & 1 ? 2 : 1, (e.flags >> 5) & 1 ? "  ctx-flag" : "", (e.flags >> 7) ? "  IFAC" : "");
+  r[1].k = "Packet"; snprintf(r[1].v, 48, "%s", ptn[e.ptype & 3]);
+  r[2].k = "Dest type"; snprintf(r[2].v, 48, "%s%s", dtn[e.dtype & 3], ((e.flags >> 4) & 1) ? "  (transport)" : "");
+  r[3].k = "Destination"; snprintf(r[3].v, 48, "%s", S.privacy ? "* * *" : hx);
+  r[4].k = "Relay ID"; snprintf(r[4].v, 48, "%s", S.privacy && e.has_via ? "* * *" : tid);
+  r[5].k = "Context"; snprintf(r[5].v, 48, "0x%02x %s", e.context, contextLabel(e.context));
+  r[6].k = "Hops"; snprintf(r[6].v, 48, "%u", e.hops);
+  r[7].k = "Signal"; if (e.tx) snprintf(r[7].v, 48, "sent by this RNode"); else snprintf(r[7].v, 48, "%d dBm   SNR %.1f dB", e.rssi, e.snr);
+  for (int i = 0; i < 8; ++i) {
+    const int y = OV_Y + 46 + i * 18;
+    fb.txt(OV_X + 10, y, r[i].k, T.muted, F_SM);
+    Fb::fit(r[i].v, OV_W - 96, F_SM);
+    fb.txt(OV_X + 84, y, r[i].v, T.text, F_SM);
+    if (i) fb.hline(OV_X + 10, y - 3, OV_W - 20, T.stroke);
+  }
+  fb.txt(OV_X + 10, OV_Y + OV_H - 16, "Header only: the contents stay encrypted.", T.muted, F_SM);
+}
+
+void viewTracker(Fb& fb, uint32_t now) {
+  if (S.ov_idx < 0 || !S.st[S.ov_idx].used) { S.ov = OV_NONE; return; }
+  const Station& st = S.st[S.ov_idx];
+  char b[48];
+  fb.clear(T.bg);
+  fb.icon(12, 10, I_RADAR, 18, T.accent);
+  nameOf(st.dest, S.ov_idx, b, sizeof b); Fb::fit(b, 230, F_TITLE);
+  fb.txt(36, 9, b, T.text, F_TITLE);
+  closeButton(fb, W - 18, 18);
+  const int sf = S.radio.sf ? S.radio.sf : 9;
+  const float floor_db = -7.5f - 2.5f * (sf - 7);
+  float m = st.snr - floor_db; m = m < 0 ? 0 : m > 30 ? 30 : m;
+  const bool fresh = now - st.last_ms < 60000;
+  const int cx = W / 2, cy = 150;
+  fb.arc(cx, cy, 96, 14, 0, 180, T.stroke);
+  const uint16_t c = m > 15 ? T.green : m > 7 ? T.yellow : T.orange;
+  if (m > 0.3f) fb.arc(cx, cy, 96, 14, (int)(180 - m / 30 * 180), 180, fresh ? c : T.muted);
+  // needle
+  const float a = (180 - m / 30 * 180) * 3.14159f / 180.0f;
+  fb.fillCircle(cx + (int)(89 * cosf(a)), cy - (int)(89 * sinf(a)), 9, T.text);
+  fb.fillCircle(cx + (int)(89 * cosf(a)), cy - (int)(89 * sinf(a)), 5, fresh ? c : T.muted);
+  snprintf(b, sizeof b, "%d", st.rssi);
+  fb.txtC(cx, cy - 64, b, fresh ? T.text : T.muted, F_HUGE);
+  fb.txtC(cx, cy - 16, "dBm", T.sub, F_BOLD);
+  snprintf(b, sizeof b, "SNR %.1f dB   margin %.0f dB over the SF%d floor", st.snr, m, sf);
+  fb.txtC(cx, cy + 8, b, T.sub, F_SM);
+  char ago[8]; fmtAgo(now - st.last_ms, ago, sizeof ago);
+  snprintf(b, sizeof b, "last packet %s ago  -  higher beep = stronger", ago);
+  Fb::fit(b, W - 20, F_SM);
+  fb.txtC(cx, H - 56, b, fresh ? T.muted : T.orange, F_SM);
+  // last packets
+  for (int i = 0; i < st.hist_n; ++i) {
+    const int v = st.hist[(st.hist_head - st.hist_n + i + 16) % 16];
+    int bh = (v + 130) * 30 / 70; bh = bh < 2 ? 2 : bh > 30 ? 30 : bh;
+    fb.fillRound(40 + i * 15, H - 8 - bh, 11, bh, 2, v > -90 ? T.green : v > -110 ? T.accent : T.orange);
+  }
+}
+
+void viewQuick(Fb& fb, uint32_t now) {
+  const int slide = (int)((now - S.ov_ms) > 200 ? 256 : (now - S.ov_ms) * 256 / 200);
+  const int h = 168, y = -h + h * slide / 256;
+  fb.shade(0, 0, W, H, 120);
+  fb.fillRound(6, y - 12, W - 12, h + 12, 14, T.card);
+  const Settings& st = settings();
+  struct { const char* l; const char* s; uint8_t ic; bool on; } t[4] = {
+    {"Sounds", st.sounds ? "on" : "off", I_BCAST, st.sounds},
+    {"Privacy", S.privacy ? "on" : "off", I_INFO, S.privacy},
+    {"Screen off", "tap to wake", I_CLOCK, false},
+    {"Theme", st.theme, I_CHART, true}};
+  for (int i = 0; i < 4; ++i) {
+    const int x = 14 + i * 74, yy = y + 10;
+    fb.fillRound(x, yy, 70, 58, 10, t[i].on ? T.accent_bg : T.card2);
+    fb.icon(x + 8, yy + 8, t[i].ic, 18, t[i].on ? T.accent : T.sub);
+    fb.txt(x + 8, yy + 29, t[i].l, T.text, F_BOLD);
+    fb.txt(x + 8, yy + 43, t[i].s, T.muted, F_SM);
+  }
+  // brightness slider
+  const int sy = y + 82;
+  fb.icon(16, sy + 2, I_INFO, 13, T.sub);
+  fb.txt(34, sy, "Brightness", T.sub, F_SM);
+  char b[40]; snprintf(b, sizeof b, "%d%%", st.brightness);
+  fb.txtR(W - 18, sy, b, T.text, F_SM);
+  fb.fillRound(16, sy + 20, W - 32, 8, 4, T.stroke);
+  const int kx = 16 + (W - 32) * (st.brightness - 5) / 95;
+  fb.fillRound(16, sy + 20, kx - 16 > 8 ? kx - 16 : 8, 8, 4, T.accent);
+  fb.fillCircle(kx, sy + 24, 9, rgb(0xFFFFFF));
+  // info + handle
+  if (S.web[0]) snprintf(b, sizeof b, "%s   %s", S.web, S.fw);
+  else snprintf(b, sizeof b, "%s", S.fw);
+  Fb::fit(b, W - 32, F_SM);
+  fb.txt(16, sy + 42, b, T.muted, F_SM);
+  fb.fillRound(W / 2 - 20, y + h - 9, 40, 4, 2, T.muted);
+}
+
+}  // namespace
+
+// --- quick panel setters live in cui_core.cpp ---
+void qpSetBrightness(int pct);
+void qpToggleSounds();
+void qpTogglePrivacy();
+void qpNextTheme();
+void qpScreenOff();
+
+bool onTap(int x, int y) {
+  // tap-opened views first
+  if (S.ov == OV_QUICK) {
+    const int h = 168;
+    if (y > h) { S.ov = OV_NONE; return true; }
+    if (y >= 10 && y < 68) {
+      const int i = (x - 14) / 74;
+      if (i == 0) qpToggleSounds(); else if (i == 1) qpTogglePrivacy(); else if (i == 2) qpScreenOff(); else if (i == 3) qpNextTheme();
+      return true;
+    }
+    if (y >= 92 && y < 126) { qpSetBrightness(5 + (x - 16) * 95 / (W - 32)); return true; }
+    return true;
+  }
+  if (S.ov == OV_TRACK) { if (x > W - 44 && y < 44) S.ov = OV_NONE; return true; }
+  if (S.ov == OV_STATION || S.ov == OV_PACKET) {
+    if (x > OV_X + OV_W - 40 && y < OV_Y + 40) { S.ov = OV_NONE; return true; }
+    if (S.ov == OV_STATION && y > OV_Y + OV_H - 40 && x < OV_X + 140) { S.ov = OV_TRACK; return true; }
+    return true;
+  }
+  if (S.retro) return false;
+  if (x < 60) {                                       // the rail
+    const int p = (y - 4) / 33;
+    if (p < 0 || p >= PG_COUNT) return false;
+    setPage(p);
+    return true;
+  }
+  const bool tabbed = S.page == PG_LIST || S.page == PG_GRAPHS || S.page == PG_AREA || S.page == PG_IFACES;
+  if (tabbed && y >= TAB_Y && y < TAB_Y + TAB_H) {
+    if (S.page == PG_LIST && x >= XR - 58) {           // scroll buttons
+      const int step = 3;
+      if (x < XR - 28) S.scroll[PG_LIST] = S.scroll[PG_LIST] > step ? S.scroll[PG_LIST] - step : 0;
+      else if (S.scroll[PG_LIST] + step < kMaxStations) S.scroll[PG_LIST] += step;
+      return true;
+    }
+    const int w = S.page == PG_LIST ? CW - 60 : CW;
+    const int t = (x - X0) * 2 / w;
+    if (t >= 0 && t < 2) { S.tab[S.page] = (uint8_t)t; S.scroll[S.page] = 0; }
+    return true;
+  }
+  if (S.page == PG_LIST && S.tab[PG_LIST] == 0 && y >= 54) {          // packet -> inspector
+    const int i = (y - 54) / 34 + S.scroll[PG_LIST];
+    if (i < S.log_count) { S.ov = OV_PACKET; S.ov_idx = (S.log_head - 1 - i + kLogLen) % kLogLen; }
+    return true;
+  }
+  if (S.page == PG_LIST && S.tab[PG_LIST] == 1) {
+    if (y >= 50 && y < 68) {                                          // sort / filter chips
+      if (x > XR - 90) S.node_filter = (uint8_t)((S.node_filter + 1) % 5);
+      else { int cx = X0; for (int i = 0; i < 3; ++i) { const int w = Fb::txtW(kSortName[i], F_SM) + 10;
+        if (x >= cx && x < cx + w + 4) S.node_sort = (uint8_t)i; cx += w + 4; } }
+      S.scroll[PG_LIST] = 0;
+      return true;
+    }
+    if (y >= NODE_ROW_Y) {                                            // station -> details
+      int idx[kMaxStations];
+      const int n = nodeList(idx, kMaxStations);
+      const int r = (y - NODE_ROW_Y) / NODE_RH + S.scroll[PG_LIST];
+      if (r < n) { S.ov = OV_STATION; S.ov_idx = idx[r]; }
+      return true;
+    }
+  }
+  if (S.page == PG_STATUS && S.host && x >= ANN_X && y >= ANN_Y && y < ANN_Y + 28) {
+    snprintf(S.host_out, sizeof S.host_out, "announce");
+    notify(N_INFO, "Asked your computer to announce", S.now_ms);
+    return true;
+  }
+  return false;
+}
+
+namespace {
 
 // ---- notifications -----------------------------------------------------------
 void blit2x(Fb& fb, int x0, int y0, const uint8_t* pix, const uint16_t* pal, int w, int h, int clip_r = 0) {
@@ -712,6 +1225,8 @@ void noteToast(Fb& fb, uint32_t now) {
     case N_BATT:      pix = kPopBatt; pal = kPopBattPal; snprintf(title, sizeof title, "Battery low"); snprintf(body, sizeof body, "%s", n.text); accent = T.red; break;
     case N_ECHO:      pix = kPopNode; pal = kPopNodePal; snprintf(title, sizeof title, "You were heard!"); snprintf(body, sizeof body, "Repeated by %s", S.privacy ? "* * *" : n.text); accent = T.green; break;
     case N_AIRTIME:   pix = kPopIntf; pal = kPopIntfPal; snprintf(title, sizeof title, "Airtime high"); snprintf(body, sizeof body, "%s", n.text); accent = T.orange; break;
+    case N_WATCH:     pix = kPopNode; pal = kPopNodePal; snprintf(title, sizeof title, "In range!"); snprintf(body, sizeof body, "%s", S.privacy ? "* * *" : n.text); accent = T.yellow; break;
+    case N_INFO:      pix = kPopHostUp; pal = kPopHostUpPal; snprintf(title, sizeof title, "Done"); snprintf(body, sizeof body, "%s", n.text); accent = T.accent; break;
     default: break;
   }
   fb.fillRound(x + 2, y + 3, w, h, 12, rgb(0x000000));        // soft shadow
@@ -762,21 +1277,51 @@ void screensaver(Fb& fb, uint32_t now) {
 
 void render(Fb& fb, uint32_t now) {
   S.now_ms = now;
-  if (S.retro) { renderRetro(fb, now); return; }
+  if (S.ov == OV_TRACK && !S.retro) { viewTracker(fb, now); drawNote(fb, now); return; }
+  if (S.retro) {
+    renderRetro(fb, now);
+    if (S.ov == OV_QUICK) viewQuick(fb, now);
+    return;
+  }
   if (S.idle && !wantWake()) { screensaver(fb, now); return; }
   fb.clear(T.bg);
+  static const char* const kHeardTabs[2] = {"Packets", "Nodes"};
+  static const char* const kSigTabs[2] = {"Live", "History"};
+  static const char* const kAreaTabs[2] = {"Map", "Sky"};
+  static const char* const kRadioTabs[2] = {"Interfaces", "Network"};
+  TOP = 26;
   switch (S.page) {
     case PG_HEARD:   pageHome(fb, now); break;
-    case PG_LIST:    pageHeard(fb, now); break;
-    case PG_GRAPHS:  pageSignal(fb, now); break;
+    case PG_LIST:
+      TOP = 52;
+      if (S.tab[PG_LIST] == 0) heardPackets(fb, now); else heardNodes(fb, now);
+      TOP = 26;
+      tabs(fb, kHeardTabs, 2, S.tab[PG_LIST], CW - 60); scrollButtons(fb);
+      break;
+    case PG_GRAPHS:
+      TOP = 52;
+      if (S.tab[PG_GRAPHS] == 0) signalLive(fb, now); else signalHistory(fb, now);
+      TOP = 26; tabs(fb, kSigTabs, 2, S.tab[PG_GRAPHS], CW);
+      break;
     case PG_CHANNEL: pageChannel(fb, now); break;
-    case PG_AREA:    pageArea(fb, now); break;
-    case PG_IFACES:  pageRadios(fb, now); break;
+    case PG_AREA:
+      TOP = 52;
+      if (S.tab[PG_AREA] == 0) areaMap(fb, now); else areaSky(fb, now);
+      TOP = 26; tabs(fb, kAreaTabs, 2, S.tab[PG_AREA], CW);
+      break;
+    case PG_IFACES:
+      TOP = 52;
+      if (S.tab[PG_IFACES] == 0) radiosIfaces(fb, now); else radiosNetwork(fb, now);
+      TOP = 26; tabs(fb, kRadioTabs, 2, S.tab[PG_IFACES], CW);
+      break;
     default:         pageStatus(fb, now); break;
   }
   rail(fb);
   statusBar(fb, now);
+  if (S.ov == OV_STATION) viewStation(fb, now);
+  else if (S.ov == OV_PACKET) viewPacket(fb, now);
   drawNote(fb, now);
+  if (S.ov == OV_QUICK) viewQuick(fb, now);
   if (settings().touch_debug && S.touch_ms && now - S.touch_ms < 1500) {
     fb.fillCircle(S.touch_x, S.touch_y, 7, T.red);
     fb.fillCircle(S.touch_x, S.touch_y, 3, rgb(0xFFFFFF));

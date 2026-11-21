@@ -1748,6 +1748,15 @@ void loop() {
 
     #if defined(COLORUI)
       colorui_on_channel(noise_floor, current_rssi, interference_detected);
+      {
+        uint8_t colorui_out[24];
+        const size_t colorui_out_n = colorui_take_host_out(colorui_out, sizeof colorui_out);
+        if (colorui_out_n) {
+          serial_write(FEND); serial_write(CMD_UI_DEVICE);
+          for (size_t i = 0; i < colorui_out_n; i++) escaped_serial_write(colorui_out[i]);
+          serial_write(FEND);
+        }
+      }
       static uint32_t colorui_slow_ms = 0;
       if (millis() - colorui_slow_ms > 2000) {
         colorui_slow_ms = millis();
@@ -2004,4 +2013,13 @@ void serial_interrupt_init() {
 
 #if MCU_VARIANT == MCU_1284P || MCU_VARIANT == MCU_2560
   ISR(TIMER3_CAPT_vect) { buffer_serial(); }
+#endif
+
+#if defined(COLORUI)
+  // Called by the ColorUI Wi-Fi updater after it writes a new app image:
+  // registers that image's hash so the RNode accepts it after the restart.
+  void colorui_store_fw_hash(const uint8_t* hash32) {
+    memcpy(dev_firmware_hash_target, hash32, DEV_HASH_LEN);
+    device_save_firmware_hash();
+  }
 #endif

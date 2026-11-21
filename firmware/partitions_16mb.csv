@@ -1,9 +1,10 @@
-# RNode R8 ColorUI, 16 MB flash. nvs/otadata stay where the 2 MB no_ota
-# layout had them (0x9000 / 0xe000), so the RNode's saved settings and
-# provisioning survive an upgrade; only the app slot is bigger.
+# RNode R8 ColorUI, 16 MB flash, two 6 MB app slots so the board can update
+# itself over Wi-Fi. nvs/otadata stay where the original 2 MB layout had them
+# (0x9000 / 0xe000), so the RNode's saved settings and provisioning survive.
 # Name,    Type, SubType, Offset,   Size
 nvs,       data, nvs,     0x9000,   0x5000
 otadata,   data, ota,     0xe000,   0x2000
 app0,      app,  ota_0,   0x10000,  0x600000
-spiffs,    data, spiffs,  0x610000, 0x9E0000
+app1,      app,  ota_1,   0x610000, 0x600000
+spiffs,    data, spiffs,  0xC10000, 0x3E0000
 coredump,  data, coredump,0xFF0000, 0x10000

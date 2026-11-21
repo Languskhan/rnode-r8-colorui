@@ -20,6 +20,7 @@
 #include <LovyanGFX.hpp>
 #include "colorui_hooks.h"
 #include "colorui_web.h"
+void colorui_queue_host_out();
 #include "../core/cui.h"
 #include "colorui_demo.h"
 #include <Preferences.h>
@@ -102,9 +103,12 @@ void push(EvType t, const uint8_t* d, uint16_t len, int16_t rssi = 0, float snr 
   xQueueSend(q, &e, 0);              // never block the radio: drop if the UI is behind
 }
 
-// --- tiny NMEA reader (RMC + GGA) ---
+// --- tiny NMEA reader (RMC + GGA + GSV) ---
 char nmea[100]; int nmea_n = 0;
 int32_t g_lat = 0, g_lon = 0; uint8_t g_sats = 0; uint32_t g_unix = 0; bool g_fix = false;
+float g_hdop = 0;
+struct SkySat { cui::SatInfo s; uint32_t ms; };
+SkySat g_sky[32]; int g_sky_n = 0;
 
 int32_t nmeaDeg(const char* v, const char* hemi) {
   if (!*v) return 0;
@@ -128,9 +132,29 @@ void nmeaLine(char* s) {
       auto two = [](const char* c) { return (c[0] - '0') * 10 + (c[1] - '0'); };
       g_unix = civilToUnix(2000 + two(f[9] + 4), two(f[9] + 2), two(f[9]), two(f[1]), two(f[1] + 2), two(f[1] + 4));
     }
-  } else if (n > 7 && strstr(f[0], "GGA")) {
+  } else if (n > 8 && strstr(f[0], "GGA")) {
     g_sats = (uint8_t)atoi(f[7]);
+    g_hdop = (float)atof(f[8]);
+  } else if (n > 4 && strstr(f[0], "GSV")) {
+    // $xxGSV,msgs,msg,inview,{prn,elev,az,snr} x up to 4  (talker = constellation)
+    const char t = f[0][2];
+    const char sys = t == 'P' ? 'G' : t == 'L' ? 'R' : t == 'A' ? 'E' : (t == 'B' || t == 'D') ? 'B' : t == 'Q' ? 'J' : 'G';
+    for (int k = 4; k + 3 < n; k += 4) {
+      if (!*f[k]) continue;
+      cui::SatInfo si; si.prn = (uint8_t)atoi(f[k]); si.elev = (int8_t)atoi(f[k + 1]);
+      si.az = (int16_t)atoi(f[k + 2]); si.snr = (int8_t)atoi(f[k + 3]); si.sys = sys;
+      int j = 0;
+      for (; j < g_sky_n; ++j) if (g_sky[j].s.prn == si.prn && g_sky[j].s.sys == sys) break;
+      if (j == g_sky_n) { if (g_sky_n < 32) g_sky_n++; else j = 31; }
+      g_sky[j].s = si; g_sky[j].ms = millis();
+    }
   }
+}
+void publishSky() {
+  cui::SatInfo v[32]; int n = 0;
+  const uint32_t now = millis();
+  for (int j = 0; j < g_sky_n; ++j) if (now - g_sky[j].ms < 10000) v[n++] = g_sky[j].s;
+  cui::onSats(v, n, g_sats, g_hdop);
 }
 void pollGps() {
   while (Serial1.available()) {
@@ -180,6 +204,12 @@ void pollTouch(uint32_t now) {
     if (waking) return;                                 // first touch only wakes the screen
     const int dx = lx - sx, dy = ly - sy;
     const int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    if (ay > 40 && ay > ax && dy > 0 && sy < 40) { cui::openQuick(); return; }        // pull down from the top
+    if (cui::overlayOpen()) {                                                         // a view is open:
+      if (ay > 40 || ax > 40) cui::closeOverlay();                                    // any swipe closes it
+      else cui::onTap(lx, ly);
+      return;
+    }
     if (ax > 40 && ax >= ay) { if (dx > 0) cui::prevPage(); else cui::nextPage(); }   // swipe left/right
     else if (ay > 40) { if (dy < 0) cui::nextPage(); else cui::prevPage(); }          // swipe up/down
     else if (now - t0 > 1000) cui::togglePrivacy();
@@ -250,11 +280,13 @@ bool sdReadAll(const char* path, uint8_t** out, size_t* n, size_t max) {
   return ok;
 }
 
+void loadStats_impl();
 void sdBootFiles() {
   uint8_t* buf = nullptr; size_t n = 0;
   if (sdReadAll("/cities.bin", &buf, &n, 4000000)) { cities = buf; cui::loadCities(cities, n); }
   if (sdReadAll("/settings.ini", &buf, &n, 16384)) { cui::applySettings((const char*)buf, n); free(buf); }
   if (sdReadAll("/names.txt", &buf, &n, 32768)) { cui::loadNames((const char*)buf, n); free(buf); }
+  loadStats_impl();
   // your own splash pictures
   File d = SD.open("/splash");
   if (d && d.isDirectory()) {
@@ -473,6 +505,33 @@ void flushLogs() {
   f.close();
 }
 
+// ---- settings.ini write-back (quick panel) and /logs/stats.bin ----
+void saveSettings() {
+  if (!sd_live) return;
+  uint8_t* in = nullptr; size_t n = 0;
+  char* out = (char*)ps_malloc(20000);
+  if (!out) return;
+  if (!sdReadAll("/settings.ini", &in, &n, 16000)) { in = nullptr; n = 0; }
+  const size_t m = cui::patchIni(in ? (const char*)in : "", n, out, 20000);
+  free(in);
+  File f = SD.open("/settings.ini", FILE_WRITE);
+  if (f) { f.write((const uint8_t*)out, m); f.close(); }
+  free(out);
+}
+void saveStats() {
+  if (!sd_live) return;
+  static uint8_t buf[1024];
+  const size_t n = cui::statsSave(buf, sizeof buf);
+  if (!n) return;
+  if (!SD.exists("/logs")) SD.mkdir("/logs");
+  File f = SD.open("/logs/stats.bin", FILE_WRITE);
+  if (f) { f.write(buf, n); f.close(); }
+}
+void loadStats_impl() {
+  uint8_t* b = nullptr; size_t n = 0;
+  if (sdReadAll("/logs/stats.bin", &b, &n, 4096)) { cui::statsLoad(b, n); free(b); }
+}
+
 // ---- backlight: brightness + screensaver dimming (LEDC on GPIO44) ----
 void backlight(int pct) {
   static int last = -1;
@@ -503,6 +562,7 @@ void uiTask(void*) {
     if (!demo && now - last_gps > 2000) {
       last_gps = now;
       if (g_fix) cui::onGps(g_lat, g_lon, g_sats, g_unix, now); else cui::onGpsLost(now);
+      publishSky();
     }
     // The PRG button stays upstream RNode's: short = Bluetooth on/off, 0.7 s = sleep,
     // 5 s = BLE pairing, 10 s = console. ColorUI pages are on the touchscreen.
@@ -517,7 +577,12 @@ void uiTask(void*) {
     static uint32_t last_log = 0;
     if (now - last_log > 30000) { last_log = now; flushLogs(); }
     colorui_web_poll();                          // SD file manager on Wi-Fi (between frames)
+    if (cui::takeSettingsDirty()) saveSettings();                // quick-panel changes -> settings.ini
+    static uint32_t last_stats = 0;
+    if (now - last_stats > 300000) { last_stats = now; saveStats(); }
     if (uint8_t b = cui::takeBeep()) playBeep(b);
+    if (uint16_t hz = cui::takeTone()) tone(CUI_BUZZER, hz, 70);           // signal tracker
+    colorui_queue_host_out();
     if (now - last_draw >= 100) {               // 10 fps
       last_draw = now;
       cui::render(fb, now);
@@ -604,4 +669,38 @@ void colorui_set_link(uint8_t link, const char* ip) {
   uint8_t d[17]; d[0] = link; size_t n = strlen(last_ip);
   memcpy(d + 1, last_ip, n); d[1 + n] = 0;
   push(EV_LINK, d, (uint16_t)(n + 2));
+}
+
+// Device -> host requests ("announce"), picked up by RNode_Firmware.ino and
+// sent to the host as KISS command 0xA1 (ignored by hosts that don't know it).
+static portMUX_TYPE g_out_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t g_out[24]; static size_t g_out_n = 0;
+void colorui_queue_host_out() {
+  uint8_t b[24];
+  const size_t n = cui::takeHostOut(b, sizeof b);
+  if (!n) return;
+  portENTER_CRITICAL(&g_out_mux); memcpy(g_out, b, n); g_out_n = n; portEXIT_CRITICAL(&g_out_mux);
+}
+size_t colorui_take_host_out(uint8_t* buf, size_t cap) {
+  size_t n = 0;
+  portENTER_CRITICAL(&g_out_mux);
+  if (g_out_n && g_out_n <= cap) { memcpy(buf, g_out, g_out_n); n = g_out_n; g_out_n = 0; }
+  portEXIT_CRITICAL(&g_out_mux);
+  return n;
+}
+
+void colorui_ota_progress(int pct, const char* msg) {
+  static int last = -1;
+  if (pct == last && pct >= 0 && pct < 100) return;
+  last = pct;
+  lcd.startWrite();
+  if (pct <= 0) { lcd.fillScreen(0x0000); }
+  lcd.fillRect(20, 96, 280, 56, lcd.color565(20, 26, 33));
+  lcd.setTextColor(0xFFFF, lcd.color565(20, 26, 33));
+  lcd.setTextSize(2);
+  lcd.setCursor(30, 104);
+  lcd.print(msg);
+  lcd.fillRect(30, 132, 260, 8, lcd.color565(38, 48, 59));
+  if (pct > 0) lcd.fillRect(30, 132, 260 * (pct > 100 ? 100 : pct) / 100, 8, lcd.color565(45, 212, 191));
+  lcd.endWrite();
 }

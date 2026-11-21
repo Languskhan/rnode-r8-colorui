@@ -15,6 +15,12 @@ constexpr int kMaxAreas    = 8;
 constexpr int kMaxIfaces   = 6;
 constexpr int kNoteQ       = 4;
 constexpr int kMyDests     = 4;
+constexpr int kSats        = 32;
+
+// overlays (views opened by a tap) and per-page tabs
+enum Overlay : uint8_t { OV_NONE = 0, OV_STATION, OV_PACKET, OV_TRACK, OV_QUICK };
+struct HourBin { uint32_t hour; uint16_t pkts, nodes; int32_t noise_sum; uint16_t noise_n; };
+struct DayBin  { uint32_t day;  uint32_t pkts; uint16_t nodes; };
 
 struct Station {
   bool     used = false;
@@ -29,6 +35,9 @@ struct Station {
   uint8_t  via[16];
   char     area[28];                 // where you were when first heard
   int      visit = -1;               // last area visit it was counted in
+  int8_t   hist[16];                 // RSSI of the last packets (dBm, clamped)
+  uint8_t  hist_n = 0, hist_head = 0;
+  uint32_t watch_ms = 0;             // last time a watch-list note fired for it
 };
 
 struct LogEntry {
@@ -46,6 +55,7 @@ struct LogEntry {
   uint8_t  via[16];
   uint8_t  wanted[16];
   char     name[24];                 // name carried by this packet itself (announces)
+  uint8_t  flags, context, ptype, dtype;
 };
 
 struct AreaVisit {
@@ -158,6 +168,23 @@ struct State {
   uint32_t last_air_check = 0;
   int16_t  touch_x = 0, touch_y = 0;
   uint32_t touch_ms = 0;
+  // 0.8
+  uint8_t  tab[PG_COUNT] = {0};
+  uint8_t  scroll[PG_COUNT] = {0};
+  uint8_t  ov = OV_NONE;
+  int      ov_idx = -1;              // station index (OV_STATION/OV_TRACK) or log slot (OV_PACKET)
+  uint32_t ov_ms = 0;
+  uint8_t  node_sort = 0;            // 0 recent, 1 signal, 2 hops
+  uint8_t  node_filter = 0;          // 0 all, 1 people, 2 nomadnet, 3 propagation, 4 calls
+  uint16_t tone = 0;
+  char     host_out[24] = {0};
+  SatInfo  sats_v[kSats];
+  int      sats_n = 0, sats_used = 0;
+  float    hdop = 0;
+  HourBin  hours[24];
+  DayBin   days[7];
+  bool     settings_dirty = false;
+  bool     force_idle = false;
 };
 
 extern State S;

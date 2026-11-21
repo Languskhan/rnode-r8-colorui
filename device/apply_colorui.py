@@ -155,6 +155,15 @@ edit(ino, "    tx_queue_handler();",
      "    tx_queue_handler();\n\n"
      "    #if defined(COLORUI)\n"
      "      colorui_on_channel(noise_floor, current_rssi, interference_detected);\n"
+     "      {\n"
+     "        uint8_t colorui_out[24];\n"
+     "        const size_t colorui_out_n = colorui_take_host_out(colorui_out, sizeof colorui_out);\n"
+     "        if (colorui_out_n) {\n"
+     "          serial_write(FEND); serial_write(CMD_UI_DEVICE);\n"
+     "          for (size_t i = 0; i < colorui_out_n; i++) escaped_serial_write(colorui_out[i]);\n"
+     "          serial_write(FEND);\n"
+     "        }\n"
+     "      }\n"
      "      static uint32_t colorui_slow_ms = 0;\n"
      "      if (millis() - colorui_slow_ms > 2000) {\n"
      "        colorui_slow_ms = millis();\n"
@@ -179,6 +188,12 @@ edit(ino, "    tx_queue_handler();",
 s_ino = open(os.path.join(root, ino)).read()
 if "void update_csma_parameters();" not in s_ino:
     s_ino = s_ino.replace('#include "Utilities.h"\n', '#include "Utilities.h"\n\n// Forward declaration: PlatformIO\'s .ino converter skips this indented definition.\n#if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52\n  void update_csma_parameters();\n#endif\n', 1)
+    open(os.path.join(root, ino), "w").write(s_ino)
+
+# ---- 3c. Wi-Fi updater: register the new image's hash ----
+s_ino = open(os.path.join(root, ino)).read()
+if "colorui_store_fw_hash" not in s_ino.split("colorui_hooks.h")[-1]:
+    s_ino = s_ino.rstrip() + "\n" + "\n#if defined(COLORUI)\n  // Called by the ColorUI Wi-Fi updater after it writes a new app image:\n  // registers that image's hash so the RNode accepts it after the restart.\n  void colorui_store_fw_hash(const uint8_t* hash32) {\n    memcpy(dev_firmware_hash_target, hash32, DEV_HASH_LEN);\n    device_save_firmware_hash();\n  }\n#endif\n"
     open(os.path.join(root, ino), "w").write(s_ino)
 
 # ---- 4. sources and build targets ------------------------------------------

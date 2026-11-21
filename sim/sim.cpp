@@ -10,6 +10,7 @@
 #include "cui_state.h"   // sim peeks at the popup timer for one screenshot
 #include "cui_rns.h"
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
@@ -54,7 +55,7 @@ int main(int argc, char** argv) {
   static const char kNames[] =
     "# names.txt example\n"
     "a1b2c3d4e5f60718  Hilltop Repeater\n"
-    "<0056ee98b2d9348e>  KJ6 Mobile (Dad)\n";
+    "<0056ee98b2d9348e>  !KJ6 Mobile (Dad)\n";
   loadNames(kNames, sizeof kNames - 1);
   RadioParams rp; rp.freq_hz = 914875000; rp.bw_hz = 125000; rp.sf = 9; rp.cr = 5; rp.txp = 22;
   setRadio(rp);
@@ -187,6 +188,40 @@ int main(int argc, char** argv) {
     savePPM(out + "/shots/nd-airtime.ppm");
     now += 900000; cui::S.ncur.kind = 0; cui::S.nq_n = 0; cui::S.msg_unread = 2;
     setIdle(true); render(fb, now); savePPM(out + "/shots/8-screensaver.ppm"); setIdle(false);
+  }
+  {   // 0.8 views
+    uint32_t now = T0 + end + 9000000;
+    cui::S.nq_n = 0; cui::S.ncur.kind = 0; cui::S.msg_unread = 0;
+    tick(now);
+    // a sky full of satellites
+    SatInfo sv[12] = {{2,72,40,42,'G'},{5,48,120,38,'G'},{12,30,200,31,'G'},{15,15,300,22,'G'},{18,60,260,40,'G'},
+                      {24,22,80,27,'G'},{29,8,160,15,'G'},{65,55,330,36,'R'},{71,35,20,29,'R'},{3,40,230,33,'E'},
+                      {11,12,110,0,'E'},{20,66,150,41,'B'}};
+    onSats(sv, 12, 9, 0.9f);
+    // a few days of history
+    {
+      const uint32_t u = cui::unixNow();
+      for (int k = 0; k < 24; ++k) { HourBin& h = cui::S.hours[(u / 3600 - k) % 24]; h.hour = u / 3600 - k;
+        h.pkts = (uint16_t)(20 + 60 * (1 + sin(k / 3.0)) + (k % 5) * 7); h.nodes = (uint16_t)(3 + k % 7);
+        h.noise_sum = (-110 + (k % 6)) * 100; h.noise_n = 100; }
+      for (int k = 0; k < 7; ++k) { DayBin& d = cui::S.days[(u / 86400 - k) % 7]; d.day = u / 86400 - k; d.nodes = (uint16_t)(6 + (k * 5) % 11); d.pkts = 900 + k * 40; }
+    }
+    struct { int page, tab; const char* f; } t8[] = {
+      {PG_LIST, 0, "a1-heard-packets"}, {PG_LIST, 1, "a2-heard-nodes"}, {PG_GRAPHS, 1, "a3-signal-history"},
+      {PG_AREA, 1, "a4-area-sky"}, {PG_IFACES, 1, "a5-radios-network"}, {PG_STATUS, 0, "a6-status-announce"}};
+    onHostLink(true, now);
+    for (auto& x : t8) { setPage(x.page); cui::S.tab[x.page] = (uint8_t)x.tab; render(fb, now); savePPM(out + "/shots/" + x.f + ".ppm"); }
+    // tap a station on the Nodes tab -> details; then Track; packet inspector; quick panel
+    setPage(PG_LIST); cui::S.tab[PG_LIST] = 1;
+    onTap(150, 72 + 33 + 10); render(fb, now); savePPM(out + "/shots/a7-station.ppm");
+    onTap(80, 26 + 210 - 20); render(fb, now); savePPM(out + "/shots/a8-tracker.ppm");
+    cui::S.ov = 0; cui::S.tab[PG_LIST] = 0;
+    onTap(150, 54 + 10); render(fb, now); savePPM(out + "/shots/a9-packet.ppm");
+    cui::S.ov = 0; setPage(PG_HEARD);
+    openQuick(); render(fb, now + 400); savePPM(out + "/shots/b1-quick.ppm");
+    cui::S.ov = 0;
+    cui::S.ncur.kind = 0; cui::S.nq_n = 0; notify(N_WATCH, "KJ6 Mobile (Dad)", now + 1000); tick(now + 1000); render(fb, now + 1600);
+    savePPM(out + "/shots/b2-watch.ppm");
   }
   fprintf(stderr, "frames=%d\n", frame);
   return 0;

@@ -67,6 +67,8 @@ enum Note : uint8_t {
   N_BATT,        // toast: battery low
   N_ECHO,        // toast: another node repeated YOUR announce (text = who)
   N_AIRTIME,     // toast: TX airtime near the 10 %/hour budget
+  N_WATCH,       // toast: a node on your watch list is in range (text = nickname)
+  N_INFO,        // toast: short info line (text)
   N_COUNT
 };
 void notify(Note kind, const char* text, uint32_t now_ms);
@@ -101,7 +103,8 @@ struct Settings {
   char     theme[12]     = "night";
   int      tz_min        = -480;     // minutes from UTC (also: tz = -8)
   bool     clock12       = false;
-  bool     beep_area = true, beep_node = false, beep_msg = true, beep_echo = true;
+  bool     sounds = true;
+  bool     beep_area = true, beep_node = false, beep_msg = true, beep_echo = true, beep_watch = true;
   bool     notes         = true;
   int      idle_min      = 5;        // screensaver after this many minutes untouched (0 = never)
   int      brightness    = 100;      // percent
@@ -114,6 +117,7 @@ struct Settings {
   bool     sd_live       = true;     // keep the SD mounted (map tiles, logs); off = read at boot only
   bool     web           = true;     // SD file manager web page on Wi-Fi (port 80)
   char     web_password[32] = "";    // "" = no password (user name: rnode)
+  bool     web_update    = true;     // allow firmware updates from the web page
   uint8_t  my_dest[4][16];           // my_lxmf = hash[,hash...]
   int      my_n          = 0;
 };
@@ -135,6 +139,27 @@ bool wantWake();
 // Map under the Area page's coverage plot (device: offline tiles from SD).
 typedef bool (*MapPainter)(Fb& fb, int x, int y, int w, int h, int32_t lat_e6, int32_t lon_e6);
 void setMapPainter(MapPainter p);
+
+// ---- 0.8: touch views ------------------------------------------------------
+// Quick panel (swipe down from the top) and the detail views opened by taps.
+void openQuick();
+void closeOverlay();
+bool overlayOpen();
+// Tracker beep: frequency in Hz to play for the packet just heard from the
+// tracked station (0 = none). Cleared when read.
+uint16_t takeTone();
+// Device -> host requests (e.g. "announce"), sent as KISS command 0xA1.
+size_t takeHostOut(uint8_t* buf, size_t cap);
+// GPS satellites in view (NMEA GSV), for the Sky view.
+struct SatInfo { uint8_t prn; int8_t elev; int16_t az; int8_t snr; char sys; };
+void onSats(const SatInfo* s, int n, int used, float hdop);
+// Settings changed on the touch screen (quick panel): the device writes them
+// back into settings.ini. patchIni() rewrites the touched keys in a copy.
+bool takeSettingsDirty();
+size_t patchIni(const char* in, size_t n, char* out, size_t cap);
+// Hourly / daily history, kept across reboots in /logs/stats.bin.
+size_t statsSave(uint8_t* buf, size_t cap);
+void   statsLoad(const uint8_t* buf, size_t n);
 
 void tick(uint32_t now_ms);
 void render(Fb& fb, uint32_t now_ms);

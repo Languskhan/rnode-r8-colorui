@@ -28,7 +28,7 @@ textarea{width:100%;min-height:420px;background:var(--bg);color:var(--text);bord
 <header><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" stroke-width="2" stroke-linecap="round"><path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2"/></svg>
 <div><b id="brand">RNode R8 ColorUI</b><br><span id="info">SD card over Wi-Fi</span></div></header>
 <main>
-<div class="tabs"><button id="t1" class="on" onclick="tab(1)">Files</button><button id="t2" onclick="tab(2)">Settings</button><button id="t3" onclick="tab(3)">Nicknames</button></div>
+<div class="tabs"><button id="t1" class="on" onclick="tab(1)">Files</button><button id="t2" onclick="tab(2)">Settings</button><button id="t3" onclick="tab(3)">Nicknames</button><button id="t4" onclick="tab(4)">Update</button></div>
 <section id="p1">
  <div class="card"><div class="quick">
   <button onclick="cd('/logs')">Logs</button><button onclick="cd('/splash')">Splash pictures</button>
@@ -51,12 +51,19 @@ textarea{width:100%;min-height:420px;background:var(--bg);color:var(--text);bord
  <p class="hint">names.txt - one "&lt;hash&gt; &lt;nickname&gt;" per line. Saving restarts the RNode.</p>
  <textarea id="nam" spellcheck="false"></textarea><div id="msg3"></div>
  <button onclick="save('/names.txt','nam','msg3',true)">Save and restart</button></div></section>
+<section id="p4" hidden><div class="card">
+ <p><b>Firmware update over Wi-Fi</b></p>
+ <p class="hint">Pick the <code>firmware.bin</code> from a release (or from <code>.pio/build/heltec_v4_r8_colorui/</code>).
+ The RNode installs it into its spare slot, registers its hash and restarts - no USB, no hash command.
+ Only use RNode R8 ColorUI builds for the Heltec V4-R8.</p>
+ <label class="btn">Choose firmware.bin<input type="file" accept=".bin" hidden onchange="ota(this.files[0])"></label>
+ <div id="omsg" style="margin-top:10px"></div><div class="bar"><i id="obar" style="width:0"></i></div></div></section>
 </main>
 <script>
 let cwd='/';const $=id=>document.getElementById(id);
 const H=s=>s.replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),E=encodeURIComponent,J=(a,b)=>(a.endsWith('/')?a:a+'/')+b;
 function sz(n){return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':n<1073741824?(n/1048576).toFixed(1)+' MB':(n/1073741824).toFixed(2)+' GB'}
-function tab(n){for(let i=1;i<=3;i++){$('p'+i).hidden=i!=n;$('t'+i).className=i==n?'on':''}
+function tab(n){for(let i=1;i<=4;i++){$('p'+i).hidden=i!=n;$('t'+i).className=i==n?'on':''}
  if(n==2)load('/settings.ini','ini');if(n==3)load('/names.txt','nam')}
 async function load(p,id){const r=await fetch('/api/get?path='+E(p));$(id).value=r.ok?await r.text():''}
 async function save(p,id,m,rs){const fd=new FormData();fd.append('f',new Blob([$(id).value],{type:'text/plain'}),'x');
@@ -81,5 +88,11 @@ async function up(files,folder){const list=[...files];let i=0,bad=0;
 async function rm(p,d){if(!confirm('Delete '+p+(d?' (folder must be empty)':'')+'?'))return;
  const r=await fetch('/api/rm?path='+E(p),{method:'POST'});$('msg').textContent=r.ok?'Deleted':'Could not delete';cd(cwd)}
 async function mk(){const n=prompt('New folder name');if(!n)return;await fetch('/api/mkdir?path='+E(J(cwd,n)),{method:'POST'});cd(cwd)}
+function ota(f){if(!f)return;if(!confirm('Install '+f.name+' ('+sz(f.size)+') on the RNode?'))return;
+ const x=new XMLHttpRequest(),fd=new FormData();fd.append('f',f,f.name);
+ x.upload.onprogress=e=>{if(e.lengthComputable){$('obar').style.width=(100*e.loaded/e.total)+'%';$('omsg').textContent='Uploading '+Math.round(100*e.loaded/e.total)+'%'}};
+ x.onload=()=>{$('omsg').textContent=x.status==200?'Installed. The RNode is restarting - this page comes back in about 15 seconds.':('Failed: '+x.responseText);if(x.status==200)setTimeout(()=>location.reload(),15000)};
+ x.onerror=()=>{$('omsg').textContent='Connection lost (the RNode may be restarting).'};
+ x.open('POST','/api/ota');x.send(fd)}
 cd('/');
 </script></body></html>)HTML";
