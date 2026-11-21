@@ -10,10 +10,10 @@ strong they are, what kind of packets, the channel's noise, and where you are.
 
 ![Boot splash](docs/img/splash.png)
 
-> **Status: 0.8.** 0.7 runs on real hardware (Heltec V4-R8 + Expansion Kit V2,
-> linked up in MeshChatX over USB and Wi-Fi). 0.8's new views are rendered by the same
-> code in the simulator and build cleanly for the R8. Unofficial community build, not
-> a release from the RNode project.
+> **Status: 0.8, running on real hardware.** Flashed on a Heltec V4-R8 + Expansion Kit V2:
+> touch views, quick panel, SD/Wi-Fi file manager and touch rail tested; linked up in
+> MeshChatX over USB and Wi-Fi. Unofficial community build, not a release from the
+> RNode project.
 
 ![0.8 views](docs/img/ui-08.png)
 
