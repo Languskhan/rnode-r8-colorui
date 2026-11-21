@@ -86,6 +86,9 @@ void setClock12(bool on);
 // Touch: a tap at (x,y) in screen pixels. Taps on the left rail pick a page;
 // returns true if the tap was used.
 bool onTap(int x, int y);
+bool retroTheme();
+// touch_debug = on: draw a dot where the panel says you touched (for tuning touch_flip)
+void showTouch(int x, int y, uint32_t now_ms);
 
 // ---- SD card files (read once at boot by the device; plain text) ----------
 // names.txt: one "<hash hex, 8-32 chars>  <nickname>" per line, # = comment.
@@ -105,7 +108,8 @@ struct Settings {
   int      dim           = 15;       // percent while the screensaver runs
   int      start_page    = 0;
   bool     privacy       = false;
-  bool     touch_flip    = false;    // flip tap Y if rail taps land on the wrong page
+  bool     touch_flip    = false;    // turn touch 180 degrees if rail taps land on the wrong side
+  bool     touch_debug   = false;    // show where touches land
   bool     log           = true;     // write /logs/*.csv on the SD card
   bool     sd_live       = true;     // keep the SD mounted (map tiles, logs); off = read at boot only
   bool     web           = true;     // SD file manager web page on Wi-Fi (port 80)

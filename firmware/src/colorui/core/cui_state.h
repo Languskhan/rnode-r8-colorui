@@ -156,6 +156,8 @@ struct State {
   uint8_t  echo_hops = 0;
   uint8_t  echo_via[16] = {0};
   uint32_t last_air_check = 0;
+  int16_t  touch_x = 0, touch_y = 0;
+  uint32_t touch_ms = 0;
 };
 
 extern State S;

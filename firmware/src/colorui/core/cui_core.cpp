@@ -417,6 +417,8 @@ void setLink(uint8_t link, const char* ip) {
 void setWebUrl(const char* u) { snprintf(S.web, sizeof S.web, "%s", u ? u : ""); }
 void setThemeName(const char* n) { S.retro = n && !strcmp(n, "retro"); setTheme(S.retro ? "night" : n); }
 void setClock12(bool on) { S.clock12 = on; }
+bool retroTheme() { return S.retro; }
+void showTouch(int x, int y, uint32_t now) { S.touch_x = (int16_t)x; S.touch_y = (int16_t)y; S.touch_ms = now ? now : 1; }
 bool onTap(int x, int y) {
   if (S.retro || x >= 46) return false;            // the rail is 44 px wide
   const int p = (y - 4) / 33;
@@ -570,6 +572,7 @@ void applySettings(const char* t, size_t len) {
     }
     else if (!strcmp(k, "privacy")) s.privacy = truthy(v);
     else if (!strcmp(k, "touch_flip")) s.touch_flip = truthy(v);
+    else if (!strcmp(k, "touch_debug")) s.touch_debug = truthy(v);
     else if (!strcmp(k, "log")) s.log = truthy(v);
     else if (!strcmp(k, "sd_live")) s.sd_live = truthy(v);
     else if (!strcmp(k, "web")) s.web = truthy(v);

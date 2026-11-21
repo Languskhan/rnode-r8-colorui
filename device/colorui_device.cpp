@@ -158,26 +158,32 @@ void touchBegin() {
 }
 uint32_t g_last_touch = 0;
 void pollTouch(uint32_t now) {
-  static bool down = false, waking = false; static uint32_t t0 = 0; static int sx = 0, lx = 0, sy = 0; static uint8_t miss = 0;
+  static bool down = false, waking = false; static uint32_t t0 = 0;
+  static int sx = 0, lx = 0, sy = 0, ly = 0; static uint8_t miss = 0;
   if (!tp) return;
   uint16_t x = 0, y = 0;
   const bool on = tp->chsc6x_read_touch_info(&x, &y) == 0;
   if (!on && down && miss < 2) { ++miss; return; }       // ignore one flaky read mid-gesture
   if (on) miss = 0;
-  // panel is portrait 240x320, UI is rotation 1 (landscape): landscape x = raw y,
-  // landscape y = 239 - raw x (settings.ini touch_flip = on if rail taps land wrong)
-  const int ux = y;
-  const int uy = cui::settings().touch_flip ? (int)x : 239 - (int)x;
-  if (on) g_last_touch = now;
-  if (on && !down) { down = true; t0 = now; sx = lx = ux; sy = uy; waking = cui::idle(); }
-  else if (on) lx = ux;
+  // Panel is portrait 240x320, the UI is landscape. On the R8 + Expansion Kit V2
+  // the touch layer reads as a 270-degree turn (tested on hardware in 0.7: the
+  // 90-degree map put left-rail taps on the right edge). touch_flip = on in
+  // settings.ini turns it 180 degrees, for panels wired the other way.
+  int ux, uy;
+  if (cui::settings().touch_flip) { ux = y; uy = 239 - (int)x; }
+  else                            { ux = 319 - (int)y; uy = x; }
+  if (on) { g_last_touch = now; cui::showTouch(ux, uy, now); }
+  if (on && !down) { down = true; t0 = now; sx = lx = ux; sy = ly = uy; waking = cui::idle(); }
+  else if (on) { lx = ux; ly = uy; }
   else if (down) {
     down = false;
     if (waking) return;                                 // first touch only wakes the screen
-    const int dx = lx - sx;
-    if (dx > 40) cui::prevPage(); else if (dx < -40) cui::nextPage();
+    const int dx = lx - sx, dy = ly - sy;
+    const int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    if (ax > 40 && ax >= ay) { if (dx > 0) cui::prevPage(); else cui::nextPage(); }   // swipe left/right
+    else if (ay > 40) { if (dy < 0) cui::nextPage(); else cui::prevPage(); }          // swipe up/down
     else if (now - t0 > 1000) cui::togglePrivacy();
-    else if (!cui::onTap(sx, sy)) cui::nextPage();      // rail tap = that page, else next page
+    else if (!cui::onTap(sx, sy) && cui::retroTheme()) cui::nextPage();  // retro: any tap = next page
   }
 }
 

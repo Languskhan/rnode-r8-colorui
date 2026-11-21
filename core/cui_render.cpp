@@ -777,6 +777,12 @@ void render(Fb& fb, uint32_t now) {
   rail(fb);
   statusBar(fb, now);
   drawNote(fb, now);
+  if (settings().touch_debug && S.touch_ms && now - S.touch_ms < 1500) {
+    fb.fillCircle(S.touch_x, S.touch_y, 7, T.red);
+    fb.fillCircle(S.touch_x, S.touch_y, 3, rgb(0xFFFFFF));
+    char b[24]; snprintf(b, sizeof b, "touch %d,%d", S.touch_x, S.touch_y);
+    fb.chip(X0 + 2, H - 20, b, T.red, rgb(0xFFFFFF), F_SM);
+  }
 }
 
 }  // namespace cui
