@@ -560,7 +560,7 @@ void colorui_begin() {
     cui::setRadio(rp);
   }
   started = true;
-  xTaskCreatePinnedToCore(uiTask, "colorui", 8192, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(uiTask, "colorui", 16384, nullptr, 1, nullptr, 0);   // 16 KB: JPEG tile decode + CSV
 }
 
 void colorui_on_rx(const uint8_t* d, uint16_t len, int rssi, float snr) { push(EV_RX, d, len, (int16_t)rssi, snr); }
