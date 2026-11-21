@@ -124,6 +124,18 @@ Interface -> RNode):
 Every RNode that should hear each other needs the same frequency, bandwidth, SF and CR.
 Pick values that are legal where you are.
 
+### Over Wi-Fi instead of USB
+
+RNode 1.86 can join your Wi-Fi (2.4 GHz only) and Reticulum connects over TCP port 7633.
+Close anything using the serial port, then:
+```
+py tools/pc/rnode_wifi.py COM5 "WiFi name" "WiFi password"
+```
+(Use this, not `rnodeconf --ssid/--psk`: same port-close reset problem as the hash.)
+Find the board's IP in your router (hostname `RNodeXXXX`) and set
+`port = tcp://<that IP>` in the interface. Reserve the IP in your router so it
+doesn't change. `rnode_wifi.py COM5 --off` turns Wi-Fi off again.
+
 Optional: `host/ColorUIRNodeInterface.py` is a drop-in interface for rnsd that also
 tells the screen which destinations are *yours* ("Message for you" cards) and shows
 the host's other interfaces. See [docs/HOST_PROTOCOL.md](docs/HOST_PROTOCOL.md).
