@@ -1,0 +1,157 @@
+// PC simulator: runs the real ColorUI core over a recorded trace of real
+// Reticulum packets and writes screenshots + animation frames (PPM).
+//
+//   sim <trace.txt> <places.bin> <outdir>
+//
+// Script (times in seconds of trace time):
+//   * "shots/": one picture of every page late in the run
+//   * "frames/": 5 fps animation of the last ~75 s, auto-flipping pages
+#include "cui.h"
+#include "cui_state.h"   // sim peeks at the popup timer for one screenshot
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <string>
+#include <vector>
+
+using namespace cui;
+
+static uint16_t fbuf[W * H];
+
+static void savePPM(const std::string& path) {
+  FILE* f = fopen(path.c_str(), "wb");
+  if (!f) { perror(path.c_str()); exit(1); }
+  fprintf(f, "P6\n%d %d\n255\n", W, H);
+  for (int i = 0; i < W * H; ++i) {
+    const uint16_t p = fbuf[i];
+    uint8_t rgbv[3] = {(uint8_t)(((p >> 11) & 31) * 255 / 31), (uint8_t)(((p >> 5) & 63) * 255 / 63), (uint8_t)((p & 31) * 255 / 31)};
+    fwrite(rgbv, 1, 3, f);
+  }
+  fclose(f);
+}
+
+static std::vector<uint8_t> unhex(const char* s) {
+  std::vector<uint8_t> v;
+  while (s[0] && s[1] && s[0] != '\n') { unsigned b; sscanf(s, "%2x", &b); v.push_back((uint8_t)b); s += 2; }
+  return v;
+}
+
+struct Ev { uint32_t t; std::string line; };
+
+int main(int argc, char** argv) {
+  if (argc < 4) { fprintf(stderr, "usage: sim trace places outdir\n"); return 1; }
+  std::string out = argv[3];
+  FILE* pf = fopen(argv[2], "rb");
+  static std::vector<uint8_t> places;
+  if (pf) { fseek(pf, 0, SEEK_END); places.resize(ftell(pf)); fseek(pf, 0, SEEK_SET);
+            if (fread(places.data(), 1, places.size(), pf) != places.size()) return 1; fclose(pf); }
+
+  begin("Heltec V4-R8 (sim)", "RNode 1.86 + ColorUI 0.1");
+  RadioParams rp; rp.freq_hz = 914875000; rp.bw_hz = 125000; rp.sf = 9; rp.cr = 5; rp.txp = 22;
+  setRadio(rp);
+  onBattery(87);
+  onSdCard(true);
+  if (!places.empty()) loadCities(places.data(), places.size());
+
+  std::vector<Ev> evs;
+  FILE* tf = fopen(argv[1], "r");
+  char buf[4096];
+  while (fgets(buf, sizeof buf, tf)) {
+    if (buf[0] == '#') continue;
+    Ev e; e.t = (uint32_t)strtoul(buf, nullptr, 10);
+    e.line = strchr(buf, ' ') + 1;
+    evs.push_back(e);
+  }
+  fclose(tf);
+
+  const uint32_t T0 = 1000;              // device "millis" at trace time 0
+  const uint32_t end = evs.back().t + 2000;
+  size_t ei = 0;
+  Fb fb(fbuf);
+  int frame = 0;
+  bool shotHeard = false, shotPopup = false;
+  uint32_t lastRx = 0;
+
+  for (uint32_t t = 0; t <= end; t += 100) {
+    const uint32_t now = T0 + t;
+    while (ei < evs.size() && evs[ei].t <= t) {
+      const char* l = evs[ei].line.c_str();
+      const uint32_t en = T0 + evs[ei].t;
+      if (l[0] == 'P') {
+        int tx, rssi; float snr; char hex[2048];
+        sscanf(l + 2, "%d %d %f %2047s", &tx, &rssi, &snr, hex);
+        auto d = unhex(hex);
+        onPacket(d.data(), d.size(), (int16_t)rssi, snr, tx, en);
+        if (!tx) lastRx = t;
+      } else if (l[0] == 'C') {
+        int n, live, intf; sscanf(l + 2, "%d %d %d", &n, &live, &intf);
+        onChannel((int16_t)n, (int16_t)live, intf, en);
+      } else if (l[0] == 'G') {
+        long la, lo; unsigned sats; unsigned long ux;
+        sscanf(l + 2, "%ld %ld %u %lu", &la, &lo, &sats, &ux);
+        onGps((int32_t)la, (int32_t)lo, (uint8_t)sats, (uint32_t)ux, en);
+      } else if (l[0] == 'H') {
+        auto d = unhex(l + 2);
+        onHostFrame(d.data(), d.size(), en);
+      }
+      ++ei;
+    }
+    tick(now);
+
+    // --- screenshots ---
+    if (!shotPopup && cui::S.ncur.kind == N_AREA && now > cui::S.ncur_start + 400 && strstr(cui::S.ncur.text, "Folsom")) {
+      const int keep = page(); setPage(PG_HEARD); render(fb, now);
+      savePPM(out + "/shots/0-popup-new-area.ppm"); setPage(keep); shotPopup = true;
+    }
+    if (!shotHeard && t >= 1740000 && lastRx && t >= lastRx + 300 && t < lastRx + 400) {   // rings mid-flight
+      setPage(PG_HEARD); render(fb, now); savePPM(out + "/shots/1-now-heard.ppm"); shotHeard = true;
+    }
+    if (t == 1780000) {
+      const char* names[] = {"", "2-last-heard", "3-graphs", "4-channel", "", "6-interfaces", "7-status"};
+      for (int p = 1; p < PG_COUNT; ++p) {
+        if (p == PG_AREA) continue;
+        setPage(p); render(fb, now); savePPM(out + "/shots/" + names[p] + ".ppm");
+      }
+      setPage(PG_HEARD);
+    }
+    if (t == end - 1000) { setPage(PG_AREA); render(fb, now); savePPM(out + "/shots/5-area.ppm"); }
+
+    // --- animation: last ~75 s at 5 fps, flipping pages every 5 s after the popup ---
+    if (t >= end - 77000 && t % 200 == 0) {
+      const uint32_t rel = t - (end - 77000);
+      int pg = PG_HEARD;
+      if (rel > 40000) pg = ((rel - 40000) / 5000 + 1) % PG_COUNT;
+      setPage(pg);
+      render(fb, now);
+      char fn[64]; snprintf(fn, sizeof fn, "/frames/%04d.ppm", frame++);
+      savePPM(out + fn);
+    }
+  }
+  // --- one picture of every notification over the live Heard page ---
+  {
+    struct { Note k; const char* t; int extra; const char* file; } shots[] = {
+      {N_AREA, "Folsom", 0, "n1-welcome"},       {N_MSG, "", 0, "n2-message"},
+      {N_MSG, "from Alice (via host)", 2, "n3-message-x3"}, {N_NODE, "Field Cardputer", 0, "n4-new-node"},
+      {N_NODE, "Mesa Relay", 2, "n5-new-nodes"}, {N_HOST_UP, "", 0, "n6-host-up"},
+      {N_HOST_LOST, "", 0, "n7-host-lost"},      {N_GPS_FIX, "9 satellites", 0, "n8-gps-fix"},
+      {N_GPS_LOST, "", 0, "n9-gps-lost"},        {N_INTF, "", 0, "na-interference"},
+      {N_BATT, "12% left", 0, "nb-battery"},
+    };
+    uint32_t now = T0 + end + 100000;
+    setPage(PG_HEARD);
+    for (auto& sh : shots) {
+      now += 200000;                                  // clear cool-downs between shots
+      cui::S.nq_n = 0; cui::S.ncur.kind = 0;
+      notify(sh.k, sh.t, now);
+      for (int i = 0; i < sh.extra; ++i) notify(sh.k, sh.t, now + 50);
+      tick(now);
+      render(fb, now + 600);
+      savePPM(out + "/shots/" + sh.file + ".ppm");
+    }
+    // the slide-in, mid-animation, for one card and one toast
+    now += 200000; cui::S.ncur.kind = 0; notify(N_AREA, "Orangevale", now); tick(now); render(fb, now + 90);
+    savePPM(out + "/shots/n0-welcome-sliding.ppm");
+  }
+  fprintf(stderr, "frames=%d\n", frame);
+  return 0;
+}

@@ -1,0 +1,379 @@
+diff -ruN a/Boards.h b/Boards.h
+--- a/Boards.h	2026-11-20 13:30:24.216175595 -0800
++++ b/Boards.h	2026-11-20 13:30:24.229551844 -0800
+@@ -97,6 +97,8 @@
+ 
+   #define PRODUCT_H32_V4      0xC3
+   #define BOARD_HELTEC32_V4   0x3F
++  #define PRODUCT_H32_V4_R8   0xCB  // ColorUI / community fork: Heltec V4-R8 (octal PSRAM)
++  #define BOARD_HELTEC32_V4_R8 0xF8
+   #define MODEL_C8            0xC8 // Heltec Lora32 v3, 850-950 MHz, 28dBm
+ 
+   #define PRODUCT_HELTEC_T114 0xC2 // Heltec Mesh Node T114
+@@ -388,9 +390,13 @@
+       const int pin_miso = 11;
+       const int pin_sclk = 9;
+ 
+-    #elif BOARD_MODEL == BOARD_HELTEC32_V4
++    #elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+       #define IS_ESP32S3 true
+-      #define HAS_DISPLAY true
++      #if defined(COLORUI)
++        #define HAS_DISPLAY false                // ColorUI drives the expansion TFT itself
++      #else
++        #define HAS_DISPLAY true
++      #endif
+       #define HAS_BLUETOOTH false
+       #define HAS_BLE true
+       #define HAS_WIFI true
+@@ -404,8 +410,13 @@
+       #define PIN_WAKEUP GPIO_NUM_0
+       #define WAKEUP_LEVEL 0
+       #define OCP_TUNED 0x28
+-      #define Vext GPIO_NUM_36
+-      #define LORA_PA_MODEL LORA_PA_UNKNOWN;
++      #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++        #define Vext GPIO_NUM_40                 // R8: GPIO36 is PSRAM
++        #define LORA_PA_MODEL LORA_PA_KCT8103L;
++      #else
++        #define Vext GPIO_NUM_36
++        #define LORA_PA_MODEL LORA_PA_UNKNOWN;
++      #endif
+ 
+       const int pin_btn_usr1 = 0;
+ 
+@@ -413,8 +424,13 @@
+         const int pin_led_rx = 13;
+         const int pin_led_tx = 14;
+       #else
+-        const int pin_led_rx = 35;
+-        const int pin_led_tx = 35;
++        #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++          const int pin_led_rx = 46;             // R8: GPIO35 is PSRAM
++          const int pin_led_tx = 46;
++        #else
++          const int pin_led_rx = 35;
++          const int pin_led_tx = 35;
++        #endif
+       #endif
+ 
+       #define MODEM SX1262
+@@ -425,7 +441,11 @@
+       #define LNA_GD_THRSHLD (-109)
+       #define LNA_GD_LIMIT   (-89)
+ 
+-      #define LORA_LNA_GAIN  17
++      #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++        #define LORA_LNA_GAIN  21
++      #else
++        #define LORA_LNA_GAIN  17
++      #endif
+       #define LORA_LNA_GVT   12
+       #define LORA_PA_PWR_EN  7
+       #define LORA_PA_CSD     2 // Same pin on GC1109
+diff -ruN a/Display.h b/Display.h
+--- a/Display.h	2026-11-20 13:30:24.219309421 -0800
++++ b/Display.h	2026-11-20 13:30:24.232110026 -0800
+@@ -60,7 +60,7 @@
+   #define DISP_ADDR 0x3C
+   #define SCL_OLED 18
+   #define SDA_OLED 17
+-#elif BOARD_MODEL == BOARD_HELTEC32_V4
++#elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+   #define DISP_RST 21
+   #define DISP_ADDR 0x3C
+   #define SCL_OLED 18
+@@ -290,7 +290,7 @@
+       digitalWrite(pin_display_en, HIGH);
+       delay(50);
+       Wire.begin(SDA_OLED, SCL_OLED);
+-    #elif BOARD_MODEL == BOARD_HELTEC32_V4
++    #elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+       // enable vext / pin 36
+       pinMode(Vext, OUTPUT);
+       digitalWrite(Vext, LOW);
+@@ -419,7 +419,7 @@
+         #elif BOARD_MODEL == BOARD_HELTEC32_V3
+           disp_mode = DISP_MODE_PORTRAIT;
+           display.setRotation(1);
+-        #elif BOARD_MODEL == BOARD_HELTEC32_V4
++        #elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+           disp_mode = DISP_MODE_PORTRAIT;
+           display.setRotation(1);
+         #elif BOARD_MODEL == BOARD_HELTEC_T114
+diff -ruN a/Makefile b/Makefile
+--- a/Makefile	2026-11-20 13:30:24.221536834 -0800
++++ b/Makefile	2026-11-20 13:30:24.234614286 -0800
+@@ -514,4 +514,13 @@
+ 	cp build/esp32.esp32.XIAO_ESP32S3/RNode_Firmware.ino.bootloader.bin build/rnode_firmware_xiao_esp32s3.bootloader
+ 	cp build/esp32.esp32.XIAO_ESP32S3/RNode_Firmware.ino.partitions.bin build/rnode_firmware_xiao_esp32s3.partitions
+ 	zip --junk-paths ./Release/rnode_firmware_xiao_esp32s3.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_xiao_esp32s3.boot_app0 build/rnode_firmware_xiao_esp32s3.bin build/rnode_firmware_xiao_esp32s3.bootloader build/rnode_firmware_xiao_esp32s3.partitions
+-	rm -r build
+\ No newline at end of file
++	rm -r build
++# ---- RNode ColorUI: Heltec V4-R8 + Expansion Kit V2 ----
++# needs: arduino-cli lib install LovyanGFX ; chsc6x (github.com/Quency-D/chsc6x) in your libraries folder
++firmware-heltec32_v4_r8_colorui:
++	arduino-cli compile --log --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M" -e --build-property "build.partitions=no_ota" --build-property "upload.maximum_size=2097152" --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0xF8\" \"-DCOLORUI\""
++
++upload-heltec32_v4_r8_colorui:
++	arduino-cli upload -p /dev/ttyACM0 --fqbn esp32:esp32:esp32s3
++	@sleep 1
++	rnodeconf /dev/ttyACM0 --firmware-hash $$(./partition_hashes ./build/esp32.esp32.esp32s3/RNode_Firmware.ino.bin)
+diff -ruN a/Power.h b/Power.h
+--- a/Power.h	2026-11-20 13:30:24.221595578 -0800
++++ b/Power.h	2026-11-20 13:30:24.234649203 -0800
+@@ -120,7 +120,11 @@
+   #define BAT_V_FLOAT     4.33
+   #define BAT_SAMPLES     7
+   const uint8_t pin_vbat = 1;
+-  const uint8_t pin_ctrl = 37;
++  #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++    const uint8_t pin_ctrl = 0xFF;                // none: GPIO37 is PSRAM on the R8
++  #else
++    const uint8_t pin_ctrl = 37;
++  #endif
+   float bat_p_samples[BAT_SAMPLES];
+   float bat_v_samples[BAT_SAMPLES];
+   uint8_t bat_samples_count = 0;
+@@ -130,14 +134,18 @@
+   bool bat_voltage_dropping = false;
+   float bat_delay_v = 0;
+   float bat_state_change_v = 0;
+-#elif BOARD_MODEL == BOARD_HELTEC32_V4
++#elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+   #define BAT_V_MIN       3.05
+   #define BAT_V_MAX       4.0
+   #define BAT_V_CHG       4.48
+   #define BAT_V_FLOAT     4.33
+   #define BAT_SAMPLES     7
+   const uint8_t pin_vbat = 1;
+-  const uint8_t pin_ctrl = 37;
++  #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++    const uint8_t pin_ctrl = 0xFF;                // none: GPIO37 is PSRAM on the R8
++  #else
++    const uint8_t pin_ctrl = 37;
++  #endif
+   float bat_p_samples[BAT_SAMPLES];
+   float bat_v_samples[BAT_SAMPLES];
+   uint8_t bat_samples_count = 0;
+@@ -202,9 +210,9 @@
+ }
+ 
+ void measure_battery() {
+-  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
++  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8) || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
+     battery_installed = true;
+-    #if BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4
++    #if BOARD_MODEL == BOARD_HELTEC32_V3 || (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+       battery_indeterminate = false;
+     #else
+       battery_indeterminate = true;
+@@ -212,8 +220,14 @@
+ 
+     #if BOARD_MODEL == BOARD_HELTEC32_V3
+       float battery_measurement = (float)(analogRead(pin_vbat)) * 0.0041;
+-    #elif BOARD_MODEL == BOARD_HELTEC32_V4
+-      float battery_measurement = (float)(analogRead(pin_vbat)) * 0.00418;
++    #elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
++      #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++        // R8: 2.5 dB attenuation, divider 4.9 x 1.035 (community fork calibration)
++        analogSetPinAttenuation(pin_vbat, ADC_2_5db);
++        float battery_measurement = (float)analogReadMilliVolts(pin_vbat) / 1000.0 * 4.9 * 1.035;
++      #else
++        float battery_measurement = (float)(analogRead(pin_vbat)) * 0.00418;
++      #endif
+     #elif BOARD_MODEL == BOARD_T3S3
+       float battery_measurement = (float)(analogRead(pin_vbat)) / 4095.0*6.7828;
+     #elif BOARD_MODEL == BOARD_HELTEC_T114
+@@ -435,9 +449,8 @@
+     pinMode(pin_ctrl,OUTPUT);
+     digitalWrite(pin_ctrl, pin_ctrl_active);
+     return true;
+-  #elif BOARD_MODEL == BOARD_HELTEC32_V4
+-    pinMode(pin_ctrl,OUTPUT);
+-    digitalWrite(pin_ctrl, HIGH);
++  #elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
++    if (pin_ctrl != 0xFF) { pinMode(pin_ctrl,OUTPUT); digitalWrite(pin_ctrl, HIGH); }
+     return true;
+   #elif BOARD_MODEL == BOARD_HELTEC_T114
+     pinMode(pin_ctrl,OUTPUT);
+diff -ruN a/RNode_Firmware.ino b/RNode_Firmware.ino
+--- a/RNode_Firmware.ino	2026-11-20 13:30:24.221700501 -0800
++++ b/RNode_Firmware.ino	2026-11-20 13:30:24.234755885 -0800
+@@ -58,6 +58,15 @@
+   bool packet_ready = false;
+ #endif
+ 
++#if defined(COLORUI)
++  #include "src/colorui/device/colorui_hooks.h"
++  uint8_t  colorui_buf[256];
++  uint16_t colorui_len = 0;
++  #if BOARD_MODEL == BOARD_HELTEC32_V4_R8
++    static_assert(pin_led_rx < 33 || pin_led_rx > 37, "R8: GPIO33-37 are octal PSRAM");
++  #endif
++#endif
++
+ void setup() {
+   #if MCU_VARIANT == MCU_ESP32
+     boot_seq();
+@@ -300,6 +309,10 @@
+   validate_status();
+ 
+   if (op_mode != MODE_TNC) LoRa->setFrequency(0);
++
++  #if defined(COLORUI)
++    colorui_begin();
++  #endif
+ }
+ 
+ void lora_receive() {
+@@ -714,6 +727,9 @@
+ }
+ 
+ void transmit(uint16_t size) {
++  #if defined(COLORUI)
++    if (radio_online) colorui_on_tx(tbuf, size);
++  #endif
+   if (radio_online) {
+     if (!promisc) {
+       uint16_t  written = 0;
+@@ -782,6 +798,14 @@
+         }
+     }
+ 
++  #if defined(COLORUI)
++  } else if (IN_FRAME && sbyte == FEND && command == CMD_UI_HOST) {
++    colorui_on_host_cmd(colorui_buf, colorui_len);
++    colorui_on_host_seen();
++    IN_FRAME = true;              // this FEND may also open the next frame
++    command = CMD_UNKNOWN;
++    frame_len = 0;
++  #endif
+   } else if (sbyte == FEND) {
+     IN_FRAME = true;
+     command = CMD_UNKNOWN;
+@@ -790,6 +814,18 @@
+     // Have a look at the command byte first
+     if (frame_len == 0 && command == CMD_UNKNOWN) {
+         command = sbyte;
++        #if defined(COLORUI)
++          if (command == CMD_UI_HOST) colorui_len = 0;
++          colorui_on_host_seen();
++        #endif
++    #if defined(COLORUI)
++    } else if (command == CMD_UI_HOST) {
++        if (sbyte == FESC) { ESCAPE = true; }
++        else {
++          if (ESCAPE) { if (sbyte == TFEND) sbyte = FEND; if (sbyte == TFESC) sbyte = FESC; ESCAPE = false; }
++          if (colorui_len < sizeof(colorui_buf)) colorui_buf[colorui_len++] = sbyte;
++        }
++    #endif
+     } else if (command == CMD_DATA) {
+         if (bt_state != BT_STATE_CONNECTED) {
+           cable_state = CABLE_STATE_CONNECTED;
+@@ -1408,7 +1444,7 @@
+     portEXIT_CRITICAL();
+   #endif
+ 
+-  #if BOARD_MODEL == BOARD_HELTEC32_V4
++  #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+     if (noise_floor > LNA_GD_THRSHLD)  { interference_detected = !carrier_detected && (current_rssi > (noise_floor+CSMA_INFR_THRESHOLD_DB)); }
+     else                               { interference_detected = !carrier_detected && (current_rssi > LNA_GD_LIMIT); }
+   #else
+@@ -1668,6 +1704,9 @@
+         kiss_indicate_stat_rssi();
+         kiss_indicate_stat_snr();
+         kiss_write_packet();
++        #if defined(COLORUI)
++          colorui_on_rx(pbuf, host_write_len, last_rssi, (float)last_snr_raw * 0.25f);
++        #endif
+       }
+ 
+       airtime_lock = false;
+@@ -1689,6 +1728,9 @@
+         kiss_indicate_stat_rssi();
+         kiss_indicate_stat_snr();
+         kiss_write_packet();
++        #if defined(COLORUI)
++          colorui_on_rx(pbuf, host_write_len, last_rssi, (float)last_snr_raw * 0.25f);
++        #endif
+       }
+ 
+       airtime_lock = false;
+@@ -1698,6 +1740,18 @@
+     #endif
+ 
+     tx_queue_handler();
++
++    #if defined(COLORUI)
++      colorui_on_channel(noise_floor, current_rssi, interference_detected);
++      static uint32_t colorui_slow_ms = 0;
++      if (millis() - colorui_slow_ms > 2000) {
++        colorui_slow_ms = millis();
++        colorui_set_radio(lora_freq, lora_bw, lora_sf, lora_cr, lora_txp);
++        #if HAS_PMU
++          colorui_set_battery(battery_ready ? (int)battery_percent : -1);
++        #endif
++      }
++    #endif
+     check_modem_status();
+   
+   } else {
+@@ -1766,7 +1820,7 @@
+           update_display(true);
+         #endif
+       #endif
+-      #if BOARD_MODEL == BOARD_HELTEC32_V4
++      #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+           digitalWrite(LORA_PA_CPS, LOW);
+           digitalWrite(LORA_PA_CSD, LOW);
+           digitalWrite(LORA_PA_PWR_EN, LOW);
+diff -ruN a/Utilities.h b/Utilities.h
+--- a/Utilities.h	2026-11-20 13:30:24.221770245 -0800
++++ b/Utilities.h	2026-11-20 13:30:24.234863682 -0800
+@@ -305,7 +305,7 @@
+ 			void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+ 			void led_id_on()  { }
+ 			void led_id_off() { }
+-	#elif BOARD_MODEL == BOARD_HELTEC32_V4
++	#elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+ 			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
+ 			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
+ 			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
+@@ -1287,7 +1287,7 @@
+ }
+ 
+ #if HAS_LORA_PA
+-	#if BOARD_MODEL == BOARD_HELTEC32_V4
++	#if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+ 		bool pa_values_determined = false;
+ 		int tx_gain[PA_GAIN_POINTS] = {100};
+ 	#else
+@@ -1298,7 +1298,7 @@
+ 
+ extern uint8_t lora_pa_model;
+ void determine_pa_values() {
+-	#if BOARD_MODEL == BOARD_HELTEC32_V4
++	#if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+ 		if (lora_pa_model == LORA_PA_GC1109) {
+ 			for (int i=0; i < PA_GAIN_POINTS; i++) { tx_gain[i] = PA_GC1109_VALUES[i]; }
+ 			pa_values_determined = true;
+@@ -1617,7 +1617,7 @@
+ 	#if PLATFORM == PLATFORM_AVR
+ 	if (rval == PRODUCT_RNODE || rval == PRODUCT_HMBRW) {
+ 	#elif PLATFORM == PLATFORM_ESP32
+-	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_H32_V4 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1  || rval == PRODUCT_XIAO_S3) {
++	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_H32_V4 || rval == PRODUCT_H32_V4_R8 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1  || rval == PRODUCT_XIAO_S3) {
+ 	#elif PLATFORM == PLATFORM_NRF52
+ 	if (rval == PRODUCT_RAK4631 || rval == PRODUCT_HELTEC_T114 || rval == PRODUCT_TECHO || rval == PRODUCT_HMBRW) {
+ 	#else
+@@ -1665,7 +1665,7 @@
+ 	if (model == MODEL_C4 || model == MODEL_C9) {
+ 	#elif BOARD_MODEL == BOARD_HELTEC32_V3
+ 	if (model == MODEL_C5 || model == MODEL_CA) {
+-	#elif BOARD_MODEL == BOARD_HELTEC32_V4
++	#elif (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V4_R8)
+ 	if (model == MODEL_C8) {
+   #elif BOARD_MODEL == BOARD_HELTEC_T114
+   if (model == MODEL_C6 || model == MODEL_C7) {

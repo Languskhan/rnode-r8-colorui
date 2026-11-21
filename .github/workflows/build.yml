@@ -1,0 +1,66 @@
+name: build
+
+# Builds the firmware on every push. Pushing a tag like v0.6 also makes a
+# GitHub Release with the flashable files attached.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Install tools
+        run: pip install platformio rns "esptool>=4.8,<5"
+
+      - name: Build
+        working-directory: firmware
+        run: pio run -e heltec_v4_r8_colorui
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          B=firmware/.pio/build/heltec_v4_r8_colorui
+          A=~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
+          mkdir -p dist
+          cp $B/firmware.bin dist/firmware.bin
+          python -m esptool --chip esp32s3 merge_bin -o dist/rnode-r8-colorui-FULL.bin \
+            --flash_mode keep --flash_freq keep --flash_size 16MB \
+            0x0 $B/bootloader.bin 0x8000 $B/partitions.bin 0xe000 $A 0x10000 $B/firmware.bin
+          python firmware/tools/partition_hashes dist/firmware.bin | tee dist/FIRMWARE_HASH.txt
+          test -s dist/FIRMWARE_HASH.txt
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rnode-r8-colorui-${{ github.sha }}
+          path: dist/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            Flashable files for the Heltec V4-R8 + Expansion Kit V2.
+            First install: `write-flash 0x0 rnode-r8-colorui-FULL.bin`, then provision.
+            Upgrade: `write-flash 0x10000 firmware.bin`, then register FIRMWARE_HASH.txt.
+            Full steps in the README. Never use `rnodeconf --autoinstall` on an R8.

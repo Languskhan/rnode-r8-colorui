@@ -1,0 +1,9 @@
+.pio/
+__pycache__/
+*.pyc
+sim/out/
+sim/sim
+sim/splash_sim
+dist/
+serial-log.txt
+*.elf
