@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
   begin("Heltec V4-R8 (sim)", "RNode 1.86 + ColorUI 0.7");
   const char* theme = getenv("THEME");
   if (theme) setThemeName(theme);
-  setLink(LINK_WIFI, "10.0.0.5");
+  setLink(LINK_WIFI, "192.168.1.50");
   static const char kNames[] =
     "# names.txt example\n"
     "a1b2c3d4e5f60718  Hilltop Repeater\n"
