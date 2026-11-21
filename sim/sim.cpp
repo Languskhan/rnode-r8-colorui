@@ -8,6 +8,7 @@
 //   * "frames/": 5 fps animation of the last ~75 s, auto-flipping pages
 #include "cui.h"
 #include "cui_state.h"   // sim peeks at the popup timer for one screenshot
+#include "cui_rns.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +47,15 @@ int main(int argc, char** argv) {
   if (pf) { fseek(pf, 0, SEEK_END); places.resize(ftell(pf)); fseek(pf, 0, SEEK_SET);
             if (fread(places.data(), 1, places.size(), pf) != places.size()) return 1; fclose(pf); }
 
-  begin("Heltec V4-R8 (sim)", "RNode 1.86 + ColorUI 0.1");
+  begin("Heltec V4-R8 (sim)", "RNode 1.86 + ColorUI 0.7");
+  const char* theme = getenv("THEME");
+  if (theme) setThemeName(theme);
+  setLink(LINK_WIFI, "10.0.0.5");
+  static const char kNames[] =
+    "# names.txt example\n"
+    "a1b2c3d4e5f60718  Hilltop Repeater\n"
+    "<0056ee98b2d9348e>  KJ6 Mobile (Dad)\n";
+  loadNames(kNames, sizeof kNames - 1);
   RadioParams rp; rp.freq_hz = 914875000; rp.bw_hz = 125000; rp.sf = 9; rp.cr = 5; rp.txp = 22;
   setRadio(rp);
   onBattery(87);
@@ -83,6 +92,22 @@ int main(int argc, char** argv) {
         auto d = unhex(hex);
         onPacket(d.data(), d.size(), (int16_t)rssi, snr, tx, en);
         if (!tx) lastRx = t;
+        // Our own first announce: remember it as "my" LXMF address, and 2 min
+        // later hear it come back through a relay (the "you were heard" path).
+        static std::vector<uint8_t> mine; static uint32_t echo_at = 0;
+        RnsInfo ri;
+        if (tx && mine.empty() && parseRns(d.data(), d.size(), ri) && ri.kind == K_ANNOUNCE && ri.service == 0) {
+          mine = d; setMyDestinations(ri.dest, 1); echo_at = t + 120000;
+        }
+        if (echo_at && t >= echo_at && !mine.empty()) {
+          std::vector<uint8_t> e;
+          e.push_back((uint8_t)(mine[0] | 0x40 | 0x10)); e.push_back(2);
+          const uint8_t relay[16] = {0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 9, 9, 9, 9, 9, 9, 9, 9};
+          e.insert(e.end(), relay, relay + 16);
+          e.insert(e.end(), mine.begin() + 2, mine.end());
+          onPacket(e.data(), e.size(), -101, 2.5f, false, en + 1);
+          echo_at = 0;
+        }
       } else if (l[0] == 'C') {
         int n, live, intf; sscanf(l + 2, "%d %d %d", &n, &live, &intf);
         onChannel((int16_t)n, (int16_t)live, intf, en);
@@ -104,10 +129,10 @@ int main(int argc, char** argv) {
       savePPM(out + "/shots/0-popup-new-area.ppm"); setPage(keep); shotPopup = true;
     }
     if (!shotHeard && t >= 1740000 && lastRx && t >= lastRx + 300 && t < lastRx + 400) {   // rings mid-flight
-      setPage(PG_HEARD); render(fb, now); savePPM(out + "/shots/1-now-heard.ppm"); shotHeard = true;
+      setPage(PG_HEARD); render(fb, now); savePPM(out + "/shots/1-home.ppm"); shotHeard = true;
     }
     if (t == 1780000) {
-      const char* names[] = {"", "2-last-heard", "3-graphs", "4-channel", "", "6-interfaces", "7-status"};
+      const char* names[] = {"", "2-heard", "3-signal", "4-channel", "", "6-radios", "7-status"};
       for (int p = 1; p < PG_COUNT; ++p) {
         if (p == PG_AREA) continue;
         setPage(p); render(fb, now); savePPM(out + "/shots/" + names[p] + ".ppm");
@@ -151,6 +176,17 @@ int main(int argc, char** argv) {
     // the slide-in, mid-animation, for one card and one toast
     now += 200000; cui::S.ncur.kind = 0; notify(N_AREA, "Orangevale", now); tick(now); render(fb, now + 90);
     savePPM(out + "/shots/n0-welcome-sliding.ppm");
+  }
+  {   // new notifications + screensaver
+    uint32_t now = T0 + end + 4000000;
+    cui::S.nq_n = 0; cui::S.ncur.kind = 0;
+    notify(N_ECHO, "Hilltop Repeater, 2 hops", now); tick(now); render(fb, now + 600);
+    savePPM(out + "/shots/nc-echo.ppm");
+    now += 900000; cui::S.ncur.kind = 0; cui::S.nq_n = 0;
+    notify(N_AIRTIME, "8.4% of the 10% budget", now); tick(now); render(fb, now + 600);
+    savePPM(out + "/shots/nd-airtime.ppm");
+    now += 900000; cui::S.ncur.kind = 0; cui::S.nq_n = 0; cui::S.msg_unread = 2;
+    setIdle(true); render(fb, now); savePPM(out + "/shots/8-screensaver.ppm"); setIdle(false);
   }
   fprintf(stderr, "frames=%d\n", frame);
   return 0;

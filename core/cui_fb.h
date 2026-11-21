@@ -64,6 +64,39 @@ class Fb {
   }
   // Pill label: colored box with dark text.
   int pill(int x, int y, const char* s, uint16_t bgc, uint16_t fg);
+
+  // ---- modern UI primitives (anti-aliased) ----
+  // Blend color c over the pixel at (x,y); a = 0..255 coverage.
+  void blend(int x, int y, uint16_t c, int a);
+  void fillRound(int x, int y, int w, int h, int r, uint16_t c);
+  void strokeRound(int x, int y, int w, int h, int r, uint16_t c);
+  void fillCircle(int cx, int cy, int r, uint16_t c);
+  // Thick arc, angles in degrees (0 = right, 90 = up), a0 < a1.
+  void arc(int cx, int cy, int r, int thick, int a0, int a1, uint16_t c);
+  void lineAA(float x0, float y0, float x1, float y1, uint16_t c);
+  // Smooth text. y = top of the line box. Returns x after the text.
+  int  txt(int x, int y, const char* s, uint16_t c, uint8_t font);
+  static int txtW(const char* s, uint8_t font);
+  static int lineH(uint8_t font);
+  int  txtR(int xr, int y, const char* s, uint16_t c, uint8_t font) { return txt(xr - txtW(s, font), y, s, c, font); }
+  int  txtC(int xc, int y, const char* s, uint16_t c, uint8_t font) { return txt(xc - txtW(s, font) / 2, y, s, c, font); }
+  // Cut s (in place) with ".." until it fits in max_w pixels.
+  static void fit(char* s, int max_w, uint8_t font);
+  // Tabler icon, size 18 or 13 px.
+  void icon(int x, int y, uint8_t id, int size, uint16_t c);
+  // Rounded label chip with text; returns x after it.
+  int  chip(int x, int y, const char* s, uint16_t bgc, uint16_t fg, uint8_t font);
 };
+
+// Font ids for Fb::txt (see tools/gen_ui_assets.py)
+enum FontId : uint8_t { F_SM = 0, F_BODY, F_BOLD, F_TITLE, F_BIG, F_HUGE };
+
+// Modern theme colors. Mutable so settings.ini can pick a theme.
+struct Theme {
+  uint16_t bg, rail, card, card2, stroke, text, sub, muted, accent, accent_bg,
+           blue, orange, violet, green, yellow, red;
+};
+extern Theme T;
+void setTheme(const char* name);   // "night" (default), "soft", "amber"
 
 }  // namespace cui

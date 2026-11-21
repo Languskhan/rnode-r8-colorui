@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <new>
+#include <stdlib.h>
 
 namespace cui {
 
@@ -106,6 +107,8 @@ const NoteRule kRules[N_COUNT] = {
   {2000, 60, 0},    // N_GPS_LOST
   {2000, 60, 0},    // N_INTF
   {3000, 0, 1},     // N_BATT
+  {3000, 30, 1},    // N_ECHO
+  {3000, 600, 0},   // N_AIRTIME
 };
 
 void setText(NoteItem& n, const char* t) {
@@ -142,6 +145,7 @@ void notify(Note kind, const char* text, uint32_t now_ms) {
     S.nq[S.nq_n++] = n;
   }
   if (kind == N_MSG && S.beep_msg) S.beep = BEEP_MESSAGE;
+  if (kind == N_MSG && S.msg_unread < 99) S.msg_unread++;
 }
 
 void setMyDestinations(const uint8_t* h, int n) {
@@ -231,6 +235,8 @@ void begin(const char* board, const char* fw) {
 void setRadio(const RadioParams& p) { S.radio = p; }
 void setTzOffsetMinutes(int m) { S.tz_min = m; }
 
+void addCoverage(int16_t rssi, float snr, uint8_t hops);   // below
+
 void onPacket(const uint8_t* d, size_t len, int16_t rssi, float snr, bool tx, uint32_t now_ms) {
   S.now_ms = now_ms;
   if (!S.boot_ms) S.boot_ms = now_ms;
@@ -268,6 +274,20 @@ void onPacket(const uint8_t* d, size_t len, int16_t rssi, float snr, bool tx, ui
     const int col = (int)(S.chan_sec % 60);
     if (rssi > S.chan[0][col]) S.chan[0][col] = rssi;
     if (r.header2) S.relayed_count++;
+    addCoverage(rssi, snr, r.hops);
+  }
+
+  // Our own announce coming back through someone else: the network heard us.
+  if (r.valid && r.kind == K_ANNOUNCE && !tx && r.hops >= 1 && S.my_n && isMine(r.dest)) {
+    S.echo_count++; S.echo_ms = now_ms; S.echo_hops = r.hops;
+    memcpy(S.echo_via, r.transport_id, 16);
+    char who[40], h[16];
+    const char* nk = r.header2 ? nickname(r.transport_id) : nullptr;
+    if (nk) snprintf(who, sizeof who, "%s, %u hop%s", nk, r.hops, r.hops == 1 ? "" : "s");
+    else if (r.header2) { hexShort(r.transport_id, h); snprintf(who, sizeof who, "%s, %u hop%s", h, r.hops, r.hops == 1 ? "" : "s"); }
+    else snprintf(who, sizeof who, "%u hop%s away", r.hops, r.hops == 1 ? "" : "s");
+    notify(N_ECHO, who, now_ms);
+    if (settings().beep_echo && !S.beep) S.beep = BEEP_NEW_STATION;
   }
 
   if (r.valid && (r.kind == K_ANNOUNCE || r.kind == K_PATHRESP) && !tx) {
@@ -387,9 +407,22 @@ bool loadCities(const uint8_t* data, size_t len) {
   return S.cities;
 }
 
-void nextPage() { S.page = (S.page + 1) % PG_COUNT; }
-void prevPage() { S.page = (S.page + PG_COUNT - 1) % PG_COUNT; }
-void setPage(int p) { if (p >= 0 && p < PG_COUNT) S.page = p; }
+void nextPage() { setPage((S.page + 1) % PG_COUNT); }
+void prevPage() { setPage((S.page + PG_COUNT - 1) % PG_COUNT); }
+void setPage(int p) { if (p >= 0 && p < PG_COUNT) S.page = p; if (S.page == PG_LIST) S.msg_unread = 0; }
+void setLink(uint8_t link, const char* ip) {
+  S.link = link;
+  snprintf(S.ip, sizeof S.ip, "%s", (link == LINK_WIFI && ip) ? ip : "");
+}
+void setThemeName(const char* n) { S.retro = n && !strcmp(n, "retro"); setTheme(S.retro ? "night" : n); }
+void setClock12(bool on) { S.clock12 = on; }
+bool onTap(int x, int y) {
+  if (S.retro || x >= 46) return false;            // the rail is 44 px wide
+  const int p = (y - 4) / 33;
+  if (p < 0 || p >= PG_COUNT) return false;
+  setPage(p);
+  return true;
+}
 int  page() { return S.page; }
 void setDemo(bool on) { S.demo = on; }
 void togglePrivacy() { S.privacy = !S.privacy; }
@@ -405,6 +438,11 @@ void tick(uint32_t now_ms) {
     notify(N_HOST_LOST, "", now_ms);
   }
   tickNotes(now_ms);
+  if (now_ms - S.last_air_check >= 10000) {
+    S.last_air_check = now_ms;
+    const float a = airtimePct();
+    if (a >= 8.0f) { char t[28]; snprintf(t, sizeof t, "%.1f%% of the 10%% budget", a); notify(N_AIRTIME, t, now_ms); }
+  }
   // City locator, same rules as WADAMESH: check every 10 s, accept a new
   // place only after two checks in a row agree (no flicker on boundaries).
   if (S.cities && S.gps_fix && now_ms - S.last_lookup_ms >= 10000) {
@@ -417,5 +455,161 @@ void tick(uint32_t now_ms) {
     if (S.cand_hits >= 2) { enterArea(name, now_ms); S.cand_hits = 0; }
   }
 }
+
+}  // namespace cui
+
+// ============================================================================
+// 0.7: nicknames, settings, coverage, idle
+// ============================================================================
+namespace cui {
+namespace {
+struct Nick { uint8_t pre[16]; uint8_t plen; char name[24]; };
+constexpr int kNicks = 64;
+Nick g_nicks[kNicks];
+int  g_nick_n = 0;
+Settings g_set;
+constexpr int kCov = 512;
+CovSample g_cov[kCov];
+int g_cov_head = 0, g_cov_n = 0;
+
+int hexv(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+// Parse up to 32 hex chars (skipping < > : and spaces inside angle brackets); returns bytes.
+int parseHex(const char*& p, uint8_t* out) {
+  int n = 0, nib = -1;
+  while (*p == ' ' || *p == '\t' || *p == '<') ++p;
+  while (*p && n < 16) {
+    const int v = hexv(*p);
+    if (v < 0) { if (*p == '>' ) ++p; break; }
+    if (nib < 0) nib = v; else { out[n++] = (uint8_t)(nib << 4 | v); nib = -1; }
+    ++p;
+  }
+  return n;
+}
+bool truthy(const char* v) { return !strcmp(v, "1") || !strcmp(v, "on") || !strcmp(v, "yes") || !strcmp(v, "true"); }
+}  // namespace
+
+int loadNames(const char* t, size_t len) {
+  g_nick_n = 0;
+  size_t i = 0;
+  char line[96];
+  while (i < len && g_nick_n < kNicks) {
+    size_t n = 0;
+    while (i < len && t[i] != '\n' && t[i] != '\r') { if (n + 1 < sizeof line) line[n++] = t[i]; ++i; }
+    while (i < len && (t[i] == '\n' || t[i] == '\r')) ++i;
+    line[n] = 0;
+    const char* p = line;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (!*p || *p == '#') continue;
+    Nick& k = g_nicks[g_nick_n];
+    const int b = parseHex(p, k.pre);
+    if (b < 4) continue;                                  // need at least 8 hex chars
+    while (*p == ' ' || *p == '\t' || *p == '=' || *p == ',') ++p;
+    if (!*p) continue;
+    snprintf(k.name, sizeof k.name, "%s", p);
+    for (int e = (int)strlen(k.name) - 1; e >= 0 && (k.name[e] == ' ' || k.name[e] == '\t'); --e) k.name[e] = 0;
+    k.plen = (uint8_t)b;
+    g_nick_n++;
+  }
+  return g_nick_n;
+}
+
+const char* nickname(const uint8_t* h) {
+  for (int i = 0; i < g_nick_n; ++i)
+    if (!memcmp(g_nicks[i].pre, h, g_nicks[i].plen)) return g_nicks[i].name;
+  return nullptr;
+}
+
+void applySettings(const char* t, size_t len) {
+  Settings s;
+  size_t i = 0;
+  char line[160];
+  while (i < len) {
+    size_t n = 0;
+    while (i < len && t[i] != '\n' && t[i] != '\r') { if (n + 1 < sizeof line) line[n++] = t[i]; ++i; }
+    while (i < len && (t[i] == '\n' || t[i] == '\r')) ++i;
+    line[n] = 0;
+    char* p = line;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (!*p || *p == '#' || *p == ';' || *p == '[') continue;
+    char* eq = strchr(p, '=');
+    if (!eq) continue;
+    *eq = 0;
+    char* k = p; char* v = eq + 1;
+    for (char* e = eq - 1; e >= k && (*e == ' ' || *e == '\t'); --e) *e = 0;
+    while (*v == ' ' || *v == '\t') ++v;
+    if (char* c = strchr(v, '#')) *c = 0;
+    for (int e = (int)strlen(v) - 1; e >= 0 && (v[e] == ' ' || v[e] == '\t' || v[e] == '"'); --e) v[e] = 0;
+    if (*v == '"') ++v;
+    for (char* c = k; *c; ++c) if (*c >= 'A' && *c <= 'Z') *c += 32;
+    if (!strcmp(k, "brand")) snprintf(s.brand, sizeof s.brand, "%s", v);
+    else if (!strcmp(k, "theme")) { snprintf(s.theme, sizeof s.theme, "%s", v); for (char* c = s.theme; *c; ++c) if (*c >= 'A' && *c <= 'Z') *c += 32; }
+    else if (!strcmp(k, "tz") || !strcmp(k, "timezone")) {
+      const double h = atof(v);
+      s.tz_min = (fabs(h) <= 14) ? (int)lround(h * 60) : (int)h;     // hours, or minutes if large
+    }
+    else if (!strcmp(k, "clock")) s.clock12 = !strcmp(v, "12") || !strcmp(v, "12h");
+    else if (!strcmp(k, "beep_area")) s.beep_area = truthy(v);
+    else if (!strcmp(k, "beep_node")) s.beep_node = truthy(v);
+    else if (!strcmp(k, "beep_message")) s.beep_msg = truthy(v);
+    else if (!strcmp(k, "beep_echo")) s.beep_echo = truthy(v);
+    else if (!strcmp(k, "sounds")) { if (!truthy(v)) s.beep_area = s.beep_node = s.beep_msg = s.beep_echo = false; }
+    else if (!strcmp(k, "notifications")) s.notes = truthy(v);
+    else if (!strcmp(k, "screensaver_minutes")) s.idle_min = atoi(v);
+    else if (!strcmp(k, "brightness")) s.brightness = atoi(v);
+    else if (!strcmp(k, "dim")) s.dim = atoi(v);
+    else if (!strcmp(k, "start_page")) {
+      static const char* pages[] = {"home", "heard", "signal", "channel", "area", "radios", "status"};
+      for (int j = 0; j < 7; ++j) if (!strcmp(v, pages[j])) s.start_page = j;
+      if (*v >= '1' && *v <= '7') s.start_page = *v - '1';
+    }
+    else if (!strcmp(k, "privacy")) s.privacy = truthy(v);
+    else if (!strcmp(k, "touch_flip")) s.touch_flip = truthy(v);
+    else if (!strcmp(k, "log")) s.log = truthy(v);
+    else if (!strcmp(k, "my_lxmf") || !strcmp(k, "my_destinations")) {
+      const char* q = v;
+      while (*q && s.my_n < 4) {
+        uint8_t h[16];
+        if (parseHex(q, h) == 16) memcpy(s.my_dest[s.my_n++], h, 16);
+        while (*q && hexv(*q) < 0) ++q;
+      }
+    }
+  }
+  if (s.brightness < 5) s.brightness = 5;
+  if (s.brightness > 100) s.brightness = 100;
+  if (s.dim < 0) s.dim = 0;
+  if (s.dim > 100) s.dim = 100;
+  g_set = s;
+  setThemeName(s.theme);
+  setTzOffsetMinutes(s.tz_min);
+  S.clock12 = s.clock12;
+  S.beep_area = s.beep_area; S.beep_station = s.beep_node; S.beep_msg = s.beep_msg;
+  setNotifications(s.notes);
+  if (s.my_n) setMyDestinations(&s.my_dest[0][0], s.my_n);
+  if (s.privacy != S.privacy) S.privacy = s.privacy;
+  setPage(s.start_page);
+}
+
+const Settings& settings() { return g_set; }
+
+int coverageCount() { return g_cov_n; }
+const CovSample& coverage(int i) { return g_cov[(g_cov_head - g_cov_n + i + kCov) % kCov]; }
+
+void addCoverage(int16_t rssi, float snr, uint8_t hops) {
+  if (!S.gps_fix) return;
+  CovSample& c = g_cov[g_cov_head];
+  c.lat = S.lat; c.lon = S.lon; c.rssi = rssi; c.snr = (int8_t)(snr < -30 ? -30 : snr > 30 ? 30 : snr);
+  c.hops = hops; c.unix = unixNow();
+  g_cov_head = (g_cov_head + 1) % kCov;
+  if (g_cov_n < kCov) g_cov_n++;
+}
+
+void setIdle(bool on) { S.idle = on; }
+bool idle() { return S.idle; }
+bool wantWake() { return S.ncur.kind == N_AREA || S.ncur.kind == N_MSG; }
 
 }  // namespace cui

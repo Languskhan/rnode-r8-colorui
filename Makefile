@@ -1,6 +1,6 @@
 # PC simulator (no hardware needed): make sim && make shots
 CXX ?= g++
-CORE = core/cui_fb.cpp core/cui_rns.cpp core/cui_core.cpp core/cui_render.cpp core/cui_splash.cpp core/city/CityLocator.cpp
+CORE = core/cui_fb.cpp core/cui_rns.cpp core/cui_core.cpp core/cui_render.cpp core/cui_render_retro.cpp core/cui_splash.cpp core/qr/qrcodegen.c core/city/CityLocator.cpp
 
 sim/sim: sim/sim.cpp $(CORE) core/*.h
 	$(CXX) -std=c++17 -O2 -Wall -Icore -o $@ sim/sim.cpp $(CORE)
