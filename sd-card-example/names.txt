@@ -1,0 +1,8 @@
+# Nicknames for nodes, one per line: <hash>  <name>
+# The hash can be a destination (an LXMF address, a NomadNet node) or a
+# relay's transport ID. 8 to 32 hex characters, <angle brackets> optional.
+# Tip: the Heard page shows short hashes like <a3f9..7c21>; copy the full one
+# from MeshChatX / Sideband / rnpath.
+
+# 25f15e1a33ba6f37c61aad8f263f02c2  My PC (MeshChatX)
+# a1b2c3d4                          Hilltop Repeater

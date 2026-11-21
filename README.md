@@ -10,14 +10,32 @@ strong they are, what kind of packets, the channel's noise, and where you are.
 
 ![Boot splash](docs/img/splash.png)
 
-> **Status: 0.6, running on real hardware.** Provisioned as an RNode, linked up in
-> MeshChatX on Windows, announcing over LoRa. Unofficial community build, not a
-> release from the RNode project.
+> **Status: 0.7 (modern UI).** 0.6 ran on real hardware (provisioned, linked up in
+> MeshChatX over USB and Wi-Fi). 0.7's new screens are rendered by the same code
+> in the simulator and build cleanly for the R8; first hardware run pending.
+> Unofficial community build, not a release from the RNode project.
+
+![0.7 screens](docs/img/ui-07.png)
 
 ## What you get
 
-- **7 pages** (swipe or tap): Now Heard, Last Heard, Graphs, Channel waterfall,
-  Area (city locator + trip log), Interfaces, Status.
+- **Modern UI**: dark cards, smooth Inter text, Tabler icons, a status bar (live
+  RX/TX, USB / Wi-Fi / Bluetooth link, GPS, battery, clock) and a left icon rail.
+  Tap a rail icon to jump to a page, swipe to flip, long-press for privacy.
+  Themes: `night` (teal), `soft` (blue), `amber`, and `retro` (the 0.6 pixel look).
+- **7 pages**: Home (clock, last heard, radio, nodes, airtime), Heard, Signal,
+  Channel waterfall, Area (town, coverage map, trip), Radios (host interfaces),
+  Status (connection + Wi-Fi IP, details, **QR code of your LXMF address**).
+- **You were heard!** When another node repeats your own announce, you get a toast
+  and Home shows when it last happened: proof your signal gets out.
+- **Coverage map**: every packet heard with a GPS fix becomes a colored dot
+  (green = strong, red = weak) on the Area page, over offline map tiles if the SD
+  card has them, and goes into a CSV log.
+- **Airtime warning** at 8 % of the 10 %/hour budget.
+- **Screensaver**: after 5 idle minutes a drifting clock with the backlight dimmed;
+  a message or new town wakes it.
+- **SD card**: settings, nicknames, your own splash pictures, offline map, logs
+  ([docs/SD_CARD.md](docs/SD_CARD.md), examples in `sd-card-example/`).
 - **12 boot splashes**, one per boot in rotation. Six comics (UFO abduction, roof
   install, solar box, balloon, fishing...) and six that sneak in real RF physics:
   LoRa up/down chirps, Fresnel zone clearance, SF12 decoding at -20 dB SNR, +6 dB =
@@ -60,7 +78,9 @@ built by GitHub Actions from this repo.
    - **First install** (erases the RNode settings too):
      `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x0 rnode-r8-colorui-FULL.bin`
    - **Upgrade** (keeps provisioning):
-     `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x10000 firmware.bin`
+     `esptool --chip esp32s3 --port PORT --baud 921600 write-flash 0x8000 partitions.bin 0x10000 firmware.bin`
+     (0.7 uses a 6 MB app slot; `partitions.bin` moves to it without touching the
+     RNode's saved settings at 0x9000)
 4. Press **RST**, then [provision / register the hash](#make-it-an-rnode).
 
 PORT is `COM5` etc. on Windows, `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem...` on a Mac.
@@ -77,12 +97,8 @@ pio run -e heltec_v4_r8_colorui -t upload       # flash + register the firmware 
 `firmware/` is a ready-to-build project: RNode 1.86 with ColorUI applied. Edit the
 sources in `core/` and `device/`, then `python3 tools/sync_firmware.py` to copy them in.
 
-**Your own name on the splash:** add a build flag in `firmware/platformio.ini`:
-```
-build_flags =
-  ...
-  '-DCOLORUI_BRAND="MY RETICULUM BOX"'
-```
+**Your own name on the splash:** put `brand = My Reticulum Box` in `settings.ini`
+on the SD card (or build with `'-DCOLORUI_BRAND="MY RETICULUM BOX"'`).
 
 ## Make it an RNode
 
@@ -153,9 +169,13 @@ the host's other interfaces. See [docs/HOST_PROTOCOL.md](docs/HOST_PROTOCOL.md).
 `tools/pc/` has read-only helpers: `capture_serial.py` (boot log that survives
 resets) and `rnode_diag.py` (asks the board for its hashes and radio state).
 
-## SD card (city locator)
+## SD card
 
-1. Format a micro-SD card **FAT32** (32 GB or smaller is easiest on Windows).
+Full list of files: [docs/SD_CARD.md](docs/SD_CARD.md). City locator:
+
+1. Format a micro-SD card **FAT32**. Windows only formats FAT32 up to 32 GB; for a
+   bigger card, run in an **Administrator** PowerShell (wipes the card in D:):
+   `$n=(Get-Partition -DriveLetter D).DiskNumber; Clear-Disk $n -RemoveData -Confirm:$false; Initialize-Disk $n -PartitionStyle MBR; New-Partition -DiskNumber $n -Size 31GB -DriveLetter D | Format-Volume -FileSystem FAT32`
 2. Download your state's file from the
    [WADAMESH city-locator release](https://github.com/Languskhan/wadamesh/releases)
    (for example `cities-california.bin`), or build one with `tools/make_cities.py`
@@ -170,6 +190,7 @@ resets) and `rnode_diag.py` (asks the board for its hashes and radio state).
 pip install rns lxmf msgpack pillow
 make shots      # every page, rendered from real Reticulum packets -> sim/out/png/
 make splash     # all boot splashes -> sim/out/splash/
+THEME=retro make shots   # other themes: soft, amber, retro
 ```
 
 ## Layout
@@ -181,7 +202,8 @@ firmware/   ready-to-build PlatformIO project (RNode 1.86 + ColorUI)
 host/       ColorUIRNodeInterface.py for rnsd + protocol helper
 sim/        PC simulator and trace generator
 tools/      art/splash/popup generators, make_cities.py, sync_firmware.py, pc/ helpers
-docs/       notifications, host protocol, radios, design notes
+docs/       SD card, notifications, host protocol, radios, design notes
+sd-card-example/  settings.ini and names.txt to start from
 ```
 
 ## License and credits
@@ -193,5 +215,7 @@ Unofficial community build; not supported by the RNode project.
   [WADAMESH](https://github.com/Languskhan/wadamesh) (GPLv3).
 - R8 board IDs, PSRAM-safe peripheral pins, battery calibration, Q-bar and waterfall
   ideas: Nickie Deuxyeux's community RNode fork (git.rns.moscow/deuxyeux/RNode_Firmware, GPLv3).
-- 8x8 font: dhepper/font8x8 (public domain).
+- 8x8 font: dhepper/font8x8 (public domain). Inter font: Rasmus Andersson (SIL OFL 1.1).
+- Icons: Tabler Icons (MIT). QR codes: Project Nayuki QR Code generator (MIT).
+- Modern UI layout inspired by Cairn (cvhviz/CAIRN) and WADAMESH.
 - Place boundaries: US Census TIGER/Line (public domain).

@@ -34,6 +34,7 @@ shutil.rmtree(work)
 # so a regenerated project matches the one that is checked in.
 tmpl = os.path.join(os.path.dirname(here), "firmware")
 shutil.copy(os.path.join(tmpl, "platformio.ini"), os.path.join(out, "platformio.ini"))
+shutil.copy(os.path.join(tmpl, "partitions_16mb.csv"), os.path.join(out, "partitions_16mb.csv"))
 for f in ("set_firmware_hash.py", "rnode_sethash.py", "finish_setup.sh"):
     shutil.copy(os.path.join(tmpl, "tools", f), os.path.join(out, "tools", f))
 os.chmod(os.path.join(out, "tools", "finish_setup.sh"), 0o755)

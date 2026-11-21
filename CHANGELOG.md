@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7
+- Modern UI: Inter fonts, Tabler icons, rounded cards, status bar, tap-to-jump icon rail,
+  new Home page; themes night / soft / amber / retro (0.6 look kept)
+- "You were heard!" when another node repeats your announce
+- Coverage map (GPS + signal per packet) on the Area page, over offline map tiles
+- QR code of your LXMF address on the Status page
+- Connection type (USB / Wi-Fi with IP / Bluetooth) in the status bar
+- Clock screensaver with backlight dimming; airtime warning at 8 %
+- SD card: settings.ini, names.txt, /splash/*.bmp, /tiles map, /logs CSV; card stays
+  mounted on the shared SPI3 bus (sd_live = off restores read-at-boot)
+- 6 MB app partition (16 MB layout); settings area unchanged
+
 ## 0.6 (first public source)
 - 12 rotating boot splashes (6 comics, 6 RF-physics scenes with real LoRa chirp patterns)
 - Graphic notifications: message for you, welcome to <city>, new node, host link,
